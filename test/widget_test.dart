@@ -342,6 +342,19 @@ void main() {
     expect(find.textContaining('only after you confirm below'), findsOneWidget);
   });
 
+  testWidgets('dashboard View all opens the garden page', (tester) async {
+    SharedPreferences.setMockInitialValues({'onboarding_complete': true});
+    await tester.pumpWidget(const LuminhawApp());
+    await tester.pumpAndSettle();
+    await openHome(tester);
+
+    await tester.tap(find.text('View all'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('My Garden'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('scan result without provider data shows an empty state', (
     tester,
   ) async {

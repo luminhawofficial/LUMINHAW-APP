@@ -46,7 +46,9 @@ class LuminhawRouter {
       ),
     ),
     '/history': _assistantOverlay((_) => const ScanHistoryPage()),
-    '/garden': _assistantOverlay((_) => const GardenPage()),
+    '/garden': _assistantOverlay(
+      (_) => Scaffold(body: SafeArea(child: const GardenPage())),
+    ),
     '/add-plant': _assistantOverlay((_) => const AddGardenPlantPage()),
     '/notifications': _assistantOverlay((_) => const NotificationsPage()),
     '/settings': _assistantOverlay((_) => const SettingsPage()),
