@@ -25,6 +25,7 @@ import 'package:luminhaw/features/ai_assistant/assistant_page.dart';
 import 'package:luminhaw/features/garden/garden_page.dart';
 import 'package:luminhaw/features/home/presentation/app_shell.dart';
 import 'package:luminhaw/features/library/library_page.dart';
+import 'package:luminhaw/features/subscription/subscription_pages.dart';
 import 'package:luminhaw/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -424,6 +425,22 @@ void main() {
     expect(subscribeButton.onPressed, isNotNull);
 
     expect(PlanEntitlementStore.instance.tier.value, PlanTier.free);
+  });
+
+  testWidgets('subscription pricing fits a narrow mobile viewport', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MaterialApp(home: PremiumPage()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PHP 49 / 30 days'), findsOneWidget);
+    expect(find.text('PHP 1,499 / 365 days'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('profile links open About and privacy disclosures', (

@@ -97,8 +97,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 controller: _search,
                 onChanged: _onSearchChanged,
                 decoration: InputDecoration(
-                  hintText:
-                      'Search English, scientific, Cebuano, or Tagalog names',
+                  hintText: 'Search:',
                   prefixIcon: const Icon(Icons.search),
                   filled: true,
                   fillColor: Colors.white,
@@ -437,7 +436,8 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: SetupNotice(
-                message: 'Saved plant details could not be loaded: '
+                message:
+                    'Saved plant details could not be loaded: '
                     '$_savedDetailsError',
               ),
             ),

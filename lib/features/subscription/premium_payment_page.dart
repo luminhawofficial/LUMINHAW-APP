@@ -254,6 +254,12 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
         proof: _proof!,
       );
       if (!mounted) return;
+      final plan = request['payment_plans'];
+      final planName = plan is Map ? plan['name'] as String? : null;
+      final amount = request['amount_centavos'] as int;
+      final currency = request['currency'] as String;
+      final paymentDate = _paymentDate;
+      final proofBytes = _proofPreviewBytes!;
       _transactionReference.clear();
       setState(() {
         _proof = null;
@@ -261,9 +267,20 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
         _isSubmitting = false;
         _openRequest = null;
       });
-      _showMessage(
-        result['message'] is String ? result['message'] as String : 'Your GCash receipt has passed validation. Your payment is now waiting for email verification.',
+      await showDialog<void>(
+        context: context,
+        builder: (context) => TemporaryPaymentReceiptDialog(
+          planName: planName ?? 'Premium plan',
+          amount: _money(amount, currency),
+          transactionReference: reference,
+          paymentDate: paymentDate,
+          receiptImage: proofBytes,
+          message: result['message'] is String
+              ? result['message'] as String
+              : null,
+        ),
       );
+      if (!mounted) return;
       await _load();
     } catch (error) {
       if (!mounted) return;
@@ -508,6 +525,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: selectedPlan.code,
+            isExpanded: true,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -518,6 +536,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
                   value: plan.code,
                   child: Text(
                     '${plan.name} · ${_money(plan.amountCentavos, plan.currency)} / ${plan.durationDays} days',
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -896,4 +915,82 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
     'expired' => 'Expired',
     _ => 'Unknown',
   };
+}
+
+class TemporaryPaymentReceiptDialog extends StatelessWidget {
+  const TemporaryPaymentReceiptDialog({
+    required this.planName,
+    required this.amount,
+    required this.transactionReference,
+    required this.paymentDate,
+    required this.receiptImage,
+    this.message,
+    super.key,
+  });
+
+  final String planName;
+  final String amount;
+  final String transactionReference;
+  final DateTime paymentDate;
+  final Uint8List receiptImage;
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Temporary payment receipt'),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Payment submitted — awaiting verification',
+              style: TextStyle(
+                color: AppColors.green,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (message != null) ...[
+              const SizedBox(height: 8),
+              Text(message!),
+            ],
+            const Divider(height: 24),
+            Text('Plan: $planName'),
+            Text('Amount: $amount'),
+            Text('GCash reference: $transactionReference'),
+            Text(
+              'Payment date: ${_PremiumPaymentPageState._dateLabel(paymentDate)} '
+              '${_PremiumPaymentPageState._timeLabel(paymentDate)}',
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Uploaded receipt',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Center(
+              child: Image.memory(
+                receiptImage,
+                height: 140,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'This is a temporary submission confirmation, not an official '
+              'receipt. Payment and Premium access remain pending until verified.',
+              style: TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
 }

@@ -233,27 +233,6 @@ class _GardenContents extends StatelessWidget {
                 ),
               ),
             ),
-        const SizedBox(height: 8),
-        const Text(
-          'Checklist',
-          style: TextStyle(
-            color: AppColors.green,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const AppCard(
-          child: Column(
-            children: [
-              _ChecklistRow(label: 'Check soil moisture'),
-              Divider(height: 18),
-              _ChecklistRow(label: 'Rotate plants toward the light'),
-              Divider(height: 18),
-              _ChecklistRow(label: 'Review your watering schedule'),
-            ],
-          ),
-        ),
         const SizedBox(height: 12),
         SetupNotice(
           message: isCloudSynced
@@ -316,32 +295,6 @@ class _GardenLoadError extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ChecklistRow extends StatelessWidget {
-  const _ChecklistRow({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Icon(
-          Icons.check_circle_outline,
-          color: AppColors.green,
-          size: 18,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(color: AppColors.muted, fontSize: 12),
-          ),
-        ),
-      ],
     );
   }
 }

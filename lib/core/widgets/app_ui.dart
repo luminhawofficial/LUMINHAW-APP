@@ -38,14 +38,20 @@ class AppHeader extends StatelessWidget {
             ),
           Image.asset('assets/icons/logo.png', width: 24, height: 24),
           const SizedBox(width: 7),
-          Text(
-            'LUMINHAW',
-            style: TextStyle(
-              color: foreground,
-              fontFamily: 'Cinzel',
-              fontWeight: FontWeight.w700,
-              fontVariations: const [FontVariation.weight(700)],
-              fontSize: 16,
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'LUMINHAW',
+                style: TextStyle(
+                  color: foreground,
+                  fontFamily: 'Cinzel',
+                  fontWeight: FontWeight.w700,
+                  fontVariations: const [FontVariation.weight(700)],
+                  fontSize: 16,
+                ),
+              ),
             ),
           ),
           const Spacer(),

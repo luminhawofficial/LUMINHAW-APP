@@ -221,22 +221,28 @@ class _PlanCard extends StatelessWidget {
               Image.asset(logo, width: 42, height: 42, fit: BoxFit.contain),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  name,
-                  style: TextStyle(
-                    color: foreground,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-              ),
-              Text(
-                price,
-                style: TextStyle(
-                  color: foreground,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        color: foreground,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    Text(
+                      price,
+                      softWrap: true,
+                      style: TextStyle(
+                        color: foreground,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
