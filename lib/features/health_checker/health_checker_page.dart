@@ -37,8 +37,7 @@ class _HealthCheckerPageState extends State<HealthCheckerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isPremium =
-        PlanEntitlementStore.instance.tier.value == PlanTier.premium;
+    final isPremium = PlanEntitlementStore.instance.hasPremiumAccess;
     return ScreenBody(
       title: 'Plant health checker',
       subtitle: 'Check for possible plant health issues using a photo.',
@@ -256,8 +255,19 @@ class _HealthCheckerPageState extends State<HealthCheckerPage> {
   }
 
   Future<void> _refreshEntitlement() async {
+    final entitlements = PlanEntitlementStore.instance;
+    if (entitlements.isTestingPremiumAccessEnabled) {
+      if (mounted) {
+        setState(() {
+          _entitlementLoaded = true;
+          _entitlementUnavailable = false;
+        });
+      }
+      return;
+    }
+
     try {
-      await PlanEntitlementStore.instance.refreshFromServer();
+      await entitlements.refreshFromServer();
       if (mounted) {
         setState(() {
           _entitlementLoaded = true;

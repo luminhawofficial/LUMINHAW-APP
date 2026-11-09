@@ -28,16 +28,17 @@ class LuminhawRouter {
   static const initialRoute = '/';
 
   static Map<String, WidgetBuilder> get routes => {
-    '/': (_) => const AppEntry(),
-    '/welcome': (_) => const WelcomePage(),
-    '/onboarding': (_) => const OnboardingPage(),
+    '/': _assistantOverlay((_) => const AppEntry()),
+    '/welcome': _assistantOverlay((_) => const WelcomePage()),
+    '/onboarding': _assistantOverlay((_) => const OnboardingPage()),
     '/home': _assistantOverlay((_) => const AppShell(), aboveBottomBar: true),
-    '/login': (_) => const LoginPage(),
-    '/signup': (_) => const SignUpPage(),
-    '/verification': (context) =>
-        VerificationPage(email: _emailArgument(context)),
-    '/forgot': (_) => const ForgotPasswordPage(),
-    '/update-password': (_) => const UpdatePasswordPage(),
+    '/login': _assistantOverlay((_) => const LoginPage()),
+    '/signup': _assistantOverlay((_) => const SignUpPage()),
+    '/verification': _assistantOverlay(
+      (context) => VerificationPage(email: _emailArgument(context)),
+    ),
+    '/forgot': _assistantOverlay((_) => const ForgotPasswordPage()),
+    '/update-password': _assistantOverlay((_) => const UpdatePasswordPage()),
     '/scan': _assistantOverlay((_) => const ScannerPage()),
     '/result': _assistantOverlay(
       (context) => ScanResultPage(

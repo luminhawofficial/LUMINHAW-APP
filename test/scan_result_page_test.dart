@@ -20,7 +20,7 @@ void main() {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL+nwAAAABJRU5ErkJggg==',
       ),
     );
-   final result = PlantIdentificationResult(
+    final result = PlantIdentificationResult(
       scanId: 'scan-id',
       name: 'Carica papaya',
       commonName: 'Papaya',
@@ -103,10 +103,10 @@ void main() {
     expect(find.text('Suitable Soil'), findsOneWidget);
     expect(find.text('Plant Origin'), findsOneWidget);
     expect(find.text('Growth Information'), findsOneWidget);
-    expect(find.text('Unlock detailed plant care.'), findsOneWidget);
-    expect(find.text('Watering frequency'), findsNothing);
-    expect(find.text('Water when the topsoil begins to dry.'), findsNothing);
-    expect(find.text('Explore Subscription'), findsOneWidget);
+    expect(find.text('Unlock detailed plant care.'), findsNothing);
+    expect(find.text('Watering frequency'), findsOneWidget);
+    expect(find.text('Water when the topsoil begins to dry.'), findsOneWidget);
+    expect(find.text('Explore Subscription'), findsNothing);
     expect(find.text('Unavailable'), findsWidgets);
     expect(find.text('Library'), findsNothing);
   });

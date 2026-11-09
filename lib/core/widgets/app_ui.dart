@@ -292,7 +292,7 @@ class PremiumFeatureGate extends StatelessWidget {
     return ValueListenableBuilder<PlanTier>(
       valueListenable: PlanEntitlementStore.instance.tier,
       builder: (context, tier, _) {
-        if (tier == PlanTier.premium) {
+        if (PlanEntitlementStore.instance.hasPremiumAccess) {
           return child;
         }
         return Container(

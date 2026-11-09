@@ -131,6 +131,55 @@ void main() {
     expect(await confirmation, isTrue);
   });
 
+  testWidgets('Lumin AI launcher stays available across app routes', (
+    tester,
+  ) async {
+    for (final route in [
+      '/',
+      '/welcome',
+      '/onboarding',
+      '/login',
+      '/signup',
+      '/verification',
+      '/forgot',
+      '/update-password',
+    ]) {
+      await tester.pumpWidget(
+        MaterialApp(initialRoute: route, routes: LuminhawRouter.routes),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byTooltip('Open Lumin AI'),
+        findsOneWidget,
+        reason: 'The launcher should be visible on $route.',
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets(
+    'Lumin AI launcher remains after returning from profile editing',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(initialRoute: '/home', routes: LuminhawRouter.routes),
+      );
+      await tester.pumpAndSettle();
+
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      final editProfileRoute = navigator.pushNamed('/edit-profile');
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Open Lumin AI'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.pumpAndSettle();
+      await editProfileRoute;
+
+      expect(find.byTooltip('Open Lumin AI'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   test('plant learning has one Library route, not a Know page', () {
     expect(LuminhawRouter.routes.containsKey('/library'), isTrue);
     expect(LuminhawRouter.routes.containsKey('/know-your-plant'), isFalse);

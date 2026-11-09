@@ -197,12 +197,14 @@ class _CareGuidePageState extends State<CareGuidePage> {
       _guide = null;
     });
     try {
-      await PlanEntitlementStore.instance.refreshFromServer();
+      final entitlements = PlanEntitlementStore.instance;
+      if (!entitlements.isTestingPremiumAccessEnabled) {
+        await entitlements.refreshFromServer();
+      }
       if (!mounted || widget.plant?.scientificName != plant.scientificName) {
         return;
       }
-      final isPremium =
-          PlanEntitlementStore.instance.tier.value == PlanTier.premium;
+      final isPremium = entitlements.hasPremiumAccess;
       setState(() {
         _isPremium = isPremium;
         _entitlementLoaded = true;

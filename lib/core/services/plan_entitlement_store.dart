@@ -12,6 +12,10 @@ class PlanEntitlementStore {
   final ValueNotifier<bool> isRefreshing = ValueNotifier(false);
   final ValueNotifier<Object?> refreshError = ValueNotifier(null);
 
+  bool get isTestingPremiumAccessEnabled => kDebugMode;
+  bool get hasPremiumAccess =>
+      isTestingPremiumAccessEnabled || tier.value == PlanTier.premium;
+
   int _refreshGeneration = 0;
   String? _entitlementUserId;
 
