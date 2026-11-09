@@ -1,0 +1,6 @@
+{
+    "cmake.sourceDirectory": "C:/Users/eldri/Desktop/LUMINHAW/linux/flutter",
+    "deno.enablePaths": [
+        "./supabase/functions"
+    ]
+}

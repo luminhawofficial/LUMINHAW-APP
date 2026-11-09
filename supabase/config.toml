@@ -1,0 +1,4 @@
+project_id = "ccxzjjsxggrxiaaehxxu"
+
+[functions.payment-email-action]
+verify_jwt = false
