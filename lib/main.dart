@@ -7,6 +7,30 @@ import 'core/services/supabase_backend.dart';
 
 export 'app/app.dart';
 
+@visibleForTesting
+void handleAuthNavigation(
+  AuthChangeEvent event, {
+  required bool emailVerified,
+}) {
+  final route = switch (event) {
+    AuthChangeEvent.passwordRecovery => '/update-password',
+    AuthChangeEvent.signedIn when emailVerified => '/home',
+    _ => null,
+  };
+  if (route == null) return;
+
+  void navigate() {
+    appNavigatorKey.currentState?.pushNamedAndRemoveUntil(route, (_) => false);
+  }
+
+  if (event == AuthChangeEvent.passwordRecovery ||
+      appNavigatorKey.currentState == null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => navigate());
+  } else {
+    navigate();
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -23,6 +47,10 @@ Future<void> main() async {
   }
   if (SupabaseBackend.isInitialized) {
     SupabaseBackend.client.auth.onAuthStateChange.listen((authState) async {
+      handleAuthNavigation(
+        authState.event,
+        emailVerified: authState.session?.user.emailConfirmedAt != null,
+      );
       try {
         await PlanEntitlementStore.instance.refreshFromServer();
       } catch (error, stackTrace) {
@@ -33,14 +61,6 @@ Future<void> main() async {
             library: 'subscription entitlement refresh',
           ),
         );
-      }
-      if (authState.event == AuthChangeEvent.passwordRecovery) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
-            '/update-password',
-            (_) => false,
-          );
-        });
       }
     });
   }

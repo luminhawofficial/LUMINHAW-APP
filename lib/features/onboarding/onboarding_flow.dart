@@ -163,6 +163,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
           children: [
             AppHeader(
               showPlan: false,
+              showNotifications: false,
               trailing: TextButton(
                 onPressed: () => completeOnboarding(context),
                 child: const Text('Skip'),

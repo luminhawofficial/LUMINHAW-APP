@@ -18,6 +18,7 @@ import 'package:flutter/material.dart'
         Theme,
         ValueKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/features/ai_assistant/assistant_page.dart';
@@ -225,6 +226,33 @@ void main() {
     expect(find.text('Choose a new password'), findsOneWidget);
   });
 
+  testWidgets('verified email callback returns to the app home', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: appNavigatorKey,
+        initialRoute: '/verification',
+        routes: {
+          '/verification': (_) =>
+              const Scaffold(body: Text('Verification pending')),
+          '/home': (_) => const Scaffold(body: Text('Luminhaw home')),
+          '/update-password': (_) =>
+              const Scaffold(body: Text('Update password')),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    handleAuthNavigation(AuthChangeEvent.signedIn, emailVerified: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Verification pending'), findsOneWidget);
+
+    handleAuthNavigation(AuthChangeEvent.signedIn, emailVerified: true);
+    await tester.pumpAndSettle();
+    expect(find.text('Luminhaw home'), findsOneWidget);
+  });
+
   testWidgets(
     'library starts empty and searches online instead of sample data',
     (tester) async {
@@ -269,6 +297,9 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     expect(find.text('Discover the green around you.'), findsOneWidget);
+    expect(find.byTooltip('Notifications'), findsNothing);
+    expect(find.byTooltip('Free plan'), findsNothing);
+    expect(find.byTooltip('Premium plan'), findsNothing);
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
     expect(find.text('Keep your garden close.'), findsOneWidget);

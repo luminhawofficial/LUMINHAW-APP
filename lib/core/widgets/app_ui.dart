@@ -10,6 +10,7 @@ class AppHeader extends StatelessWidget {
     this.trailing,
     this.dark = false,
     this.showPlan = true,
+    this.showNotifications = true,
     this.backgroundColor,
   });
 
@@ -18,6 +19,7 @@ class AppHeader extends StatelessWidget {
   final Widget? trailing;
   final bool dark;
   final bool showPlan;
+  final bool showNotifications;
   final Color? backgroundColor;
 
   @override
@@ -47,13 +49,14 @@ class AppHeader extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          IconButton(
-            tooltip: 'Notifications',
-            onPressed: () => Navigator.pushNamed(context, '/notifications'),
-            icon: Icon(Icons.notifications_none, color: foreground),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          ),
+          if (showNotifications)
+            IconButton(
+              tooltip: 'Notifications',
+              onPressed: () => Navigator.pushNamed(context, '/notifications'),
+              icon: Icon(Icons.notifications_none, color: foreground),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
           const SizedBox(width: 4),
           trailing ?? const SizedBox.shrink(),
           if (showPlan) ...[
@@ -340,10 +343,8 @@ class PremiumFeatureGate extends StatelessWidget {
                 switch (feature) {
                   'Plant health screening' =>
                     'Understand plant health and discover possible problems.',
-                  'Plant Care' =>
-                    'Get plant-specific watering, sunlight, soil, fertilizer, and maintenance guidance.',
-                  _ =>
-                    'Build better plant care habits and keep an eye on every stage.',
+                  'Plant Care' => 'Get plant-specific watering, sunlight, soil, fertilizer, and maintenance guidance.',
+                  _ => 'Build better plant care habits and keep an eye on every stage.',
                 },
                 style: const TextStyle(
                   color: AppColors.muted,
