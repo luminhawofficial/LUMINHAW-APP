@@ -1,5 +1,12 @@
 import { authenticatedUserId, enforceRateLimit } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
+import {
+  findGbifOccurrenceImage,
+  findGbifSpeciesMatch,
+  type GbifSpecies,
+  parseGbifLocalizedNames,
+} from "../_shared/gbif.ts";
+import { searchTreflePlants } from "../_shared/trefle.ts";
 
 type CatalogPlant = {
   commonName: string;
@@ -23,7 +30,7 @@ type CatalogPlant = {
   imageLicense?: string;
   imageLicenseUrl?: string;
   imageReferenceUrl?: string;
-  source: "perenual" | "gbif";
+  source: "perenual" | "trefle" | "gbif";
 };
 
 type CatalogImage = {
@@ -51,6 +58,10 @@ const localizedNameCache = new Map<
   string,
   { names: LocalizedNames; expiresAt: number }
 >();
+const speciesMatchCache = new Map<
+  string,
+  { species: GbifSpecies | undefined; expiresAt: number }
+>();
 
 function firstString(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
@@ -60,40 +71,6 @@ function firstString(value: unknown): string | null {
     }
   }
   return null;
-}
-
-function reusableLicense(value: unknown): {
-  name: string;
-  url: string;
-} | null {
-  const license = firstString(value);
-  if (!license) return null;
-
-  const normalized = license
-    .toLowerCase()
-    .replaceAll("_", "-")
-    .replace(/\s+/g, "-");
-  if (
-    normalized.includes("creativecommons.org/publicdomain/zero/1.0") ||
-    /^cc0(?:-1\.0)?$/.test(normalized)
-  ) {
-    return {
-      name: "CC0 1.0",
-      url: "https://creativecommons.org/publicdomain/zero/1.0/",
-    };
-  }
-
-  const byUrl = normalized.match(
-    /creativecommons\.org\/licenses\/by\/([234])\.0(?:\/|$)/,
-  );
-  const byLabel = normalized.match(/^cc-?by-?([234])(?:[.-]0)?$/);
-  const version = byUrl?.[1] ?? byLabel?.[1];
-  if (!version) return null;
-
-  return {
-    name: `CC BY ${version}.0`,
-    url: `https://creativecommons.org/licenses/by/${version}.0/`,
-  };
 }
 
 function httpsUrl(value: unknown): string | null {
@@ -107,68 +84,11 @@ function httpsUrl(value: unknown): string | null {
   }
 }
 
-async function fetchImageForTaxon(
+async function loadImageForTaxon(
   taxonKey: string,
 ): Promise<CatalogImage | null> {
   try {
-    const url = new URL("https://api.gbif.org/v1/occurrence/search");
-    url.searchParams.set("taxon_key", taxonKey);
-    url.searchParams.set("media_type", "StillImage");
-    for (const license of ["CC0_1_0", "CC_BY_4_0"]) {
-      url.searchParams.append("license", license);
-    }
-    url.searchParams.set("limit", "10");
-
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) {
-      console.error("GBIF image search returned", response.status);
-      return null;
-    }
-
-    const payload = await response.json();
-    if (!Array.isArray(payload.results)) return null;
-
-    for (const occurrence of payload.results) {
-      if (!occurrence || typeof occurrence !== "object") continue;
-      const key = (occurrence as Record<string, unknown>).key;
-      const occurrenceKey = typeof key === "number" ? String(key) : null;
-      const occurrencePage = occurrenceKey
-        ? `https://www.gbif.org/occurrence/${occurrenceKey}`
-        : null;
-      const mediaList = (occurrence as Record<string, unknown>).media;
-      if (!Array.isArray(mediaList)) continue;
-
-      for (const media of mediaList) {
-        if (!media || typeof media !== "object") continue;
-        const record = media as Record<string, unknown>;
-        if (
-          typeof record.type === "string" &&
-          record.type.toLowerCase() !== "stillimage"
-        ) {
-          continue;
-        }
-        const imageUrl = httpsUrl(record.identifier);
-        const license = reusableLicense(record.license);
-        if (!imageUrl || !license) continue;
-
-        const imageAttribution = firstString(record.creator) ??
-          firstString(record.rightsHolder) ??
-          firstString(record.publisher) ??
-          undefined;
-        if (license.name !== "CC0 1.0" && !imageAttribution) continue;
-
-        return {
-          imageUrl,
-          imageAttribution,
-          imageLicense: license.name,
-          imageLicenseUrl: license.url,
-          imageReferenceUrl: httpsUrl(record.references) ?? occurrencePage ??
-            imageUrl,
-        };
-      }
-    }
+    return await findGbifOccurrenceImage(taxonKey) ?? null;
   } catch (error) {
     console.error(
       "GBIF image search failed:",
@@ -179,6 +99,30 @@ async function fetchImageForTaxon(
   return null;
 }
 
+async function fetchImageForTaxon(
+  taxonKey: string,
+): Promise<CatalogImage | null> {
+  const cached = imageCache.get(taxonKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.image;
+  const pending = pendingImageLookups.get(taxonKey);
+  if (pending) return pending;
+
+  const lookup = loadImageForTaxon(taxonKey).then((image) => {
+    if (imageCache.size >= MAX_IMAGE_CACHE_ENTRIES) {
+      const oldest = imageCache.keys().next().value;
+      if (oldest !== undefined) imageCache.delete(oldest);
+    }
+    imageCache.set(taxonKey, {
+      image,
+      expiresAt: Date.now() +
+        (image ? IMAGE_CACHE_TTL_MS : EMPTY_IMAGE_CACHE_TTL_MS),
+    });
+    return image;
+  }).finally(() => pendingImageLookups.delete(taxonKey));
+  pendingImageLookups.set(taxonKey, lookup);
+  return lookup;
+}
+
 async function fetchLocalizedNamesByKey(
   taxonKey: string,
 ): Promise<LocalizedNames> {
@@ -187,31 +131,14 @@ async function fetchLocalizedNamesByKey(
   const names: LocalizedNames = {};
   try {
     const url = new URL(
-      `https://api.gbif.org/v1/species/${encodeURIComponent(taxonKey)}/vernacularNames`,
+      `https://api.gbif.org/v1/species/${
+        encodeURIComponent(taxonKey)
+      }/vernacularNames`,
     );
     url.searchParams.set("limit", "1000");
     const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok) return names;
-    const payload = await response.json();
-    if (Array.isArray(payload.results)) {
-      for (const item of payload.results) {
-        if (
-          !item ||
-          typeof item.vernacularName !== "string" ||
-          typeof item.language !== "string"
-        ) continue;
-        const language = item.language.toLowerCase().split(/[-_]/)[0];
-        const name = item.vernacularName.trim();
-        if (!name) continue;
-        if (
-          (language === "tgl" || language === "fil") &&
-          !names.tagalogName
-        ) names.tagalogName = name;
-        if (language === "ceb" && !names.bisayaName) {
-          names.bisayaName = name;
-        }
-      }
-    }
+    Object.assign(names, parseGbifLocalizedNames(await response.json()));
   } catch (error) {
     console.error(
       "GBIF localized names failed:",
@@ -229,25 +156,39 @@ async function fetchLocalizedNamesByKey(
   return names;
 }
 
+async function fetchGbifSpeciesByScientificName(
+  scientificName: string,
+): Promise<GbifSpecies | undefined> {
+  const cacheKey = scientificName.trim().replace(/\s+/g, " ").toLowerCase();
+  const cached = speciesMatchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.species;
+
+  try {
+    const species = await findGbifSpeciesMatch(scientificName);
+    if (speciesMatchCache.size >= MAX_IMAGE_CACHE_ENTRIES) {
+      const oldest = speciesMatchCache.keys().next().value;
+      if (oldest !== undefined) speciesMatchCache.delete(oldest);
+    }
+    speciesMatchCache.set(cacheKey, {
+      species,
+      expiresAt: Date.now() + (species ? 86_400_000 : 600_000),
+    });
+    return species;
+  } catch (error) {
+    console.error(
+      "GBIF species match failed:",
+      error instanceof Error ? error.name : "unknown error",
+    );
+    return undefined;
+  }
+}
+
 async function fetchLocalizedNamesByScientificName(
   scientificName: string,
 ): Promise<LocalizedNames> {
   try {
-    const url = new URL("https://api.gbif.org/v1/species/match");
-    url.searchParams.set("name", scientificName);
-    url.searchParams.set("rank", "SPECIES");
-    url.searchParams.set("kingdom", "Plantae");
-    const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
-    if (!response.ok) return {};
-    const match = await response.json();
-    if (
-      typeof match.usageKey !== "number" ||
-      match.status !== "ACCEPTED" ||
-      match.rank !== "SPECIES" ||
-      typeof match.confidence !== "number" ||
-      match.confidence < 80
-    ) return {};
-    return await fetchLocalizedNamesByKey(String(match.usageKey));
+    const species = await fetchGbifSpeciesByScientificName(scientificName);
+    return species ? await fetchLocalizedNamesByKey(species.key) : {};
   } catch (error) {
     console.error(
       "GBIF local-name match failed:",
@@ -255,6 +196,65 @@ async function fetchLocalizedNamesByScientificName(
     );
     return {};
   }
+}
+
+function addGbifTaxonomy(
+  plant: CatalogPlant,
+  species: GbifSpecies,
+): void {
+  plant.acceptedTaxonId ??= species.key;
+  plant.rank ??= species.rank;
+  plant.taxonomicStatus ??= species.taxonomicStatus;
+  if (plant.family === "Not listed") {
+    plant.family = species.family ?? plant.family;
+  }
+  plant.kingdom ??= species.kingdom;
+  plant.phylum ??= species.phylum;
+  plant.taxonomicClass ??= species.taxonomicClass;
+  plant.order ??= species.order;
+  plant.genus ??= species.genus;
+  plant.species ??= species.species;
+}
+
+async function enrichCatalogPlants(plants: CatalogPlant[]): Promise<void> {
+  const imageLookupKeys = new Set(
+    plants
+      .filter((plant) => !plant.imageUrl)
+      .slice(0, 6)
+      .map((plant) => plant.scientificName),
+  );
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(3, plants.length) }, async () => {
+      while (nextIndex < plants.length) {
+        const index = nextIndex++;
+        const plant = plants[index];
+        let taxonKey = plant.acceptedTaxonId;
+        if (!taxonKey) {
+          const species = await fetchGbifSpeciesByScientificName(
+            plant.scientificName,
+          );
+          if (species) {
+            addGbifTaxonomy(plant, species);
+            taxonKey = species.key;
+          }
+        }
+
+        const [image, names] = await Promise.all([
+          taxonKey && !plant.imageUrl &&
+            imageLookupKeys.has(plant.scientificName)
+            ? fetchImageForTaxon(taxonKey)
+            : Promise.resolve(null),
+          taxonKey
+            ? fetchLocalizedNamesByKey(taxonKey)
+            : fetchLocalizedNamesByScientificName(plant.scientificName),
+        ]);
+        if (image && !plant.imageUrl) Object.assign(plant, image);
+        plant.tagalogName ??= names.tagalogName;
+        plant.bisayaName ??= names.bisayaName;
+      }
+    }),
+  );
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -346,18 +346,7 @@ async function handleRequest(request: Request): Promise<Response> {
               plant !== null,
           );
         if (plants.length > 0) {
-          let nextIndex = 0;
-          await Promise.all(
-            Array.from({ length: Math.min(3, plants.length) }, async () => {
-              while (nextIndex < plants.length) {
-                const index = nextIndex++;
-                const names = await fetchLocalizedNamesByScientificName(
-                  plants[index].scientificName,
-                );
-                Object.assign(plants[index], names);
-              }
-            }),
-          );
+          await enrichCatalogPlants(plants);
           return jsonResponse({
             success: true,
             source: "Perenual",
@@ -370,6 +359,36 @@ async function handleRequest(request: Request): Promise<Response> {
     } catch (error) {
       console.error(
         "Perenual search failed:",
+        error instanceof Error ? error.name : "unknown error",
+      );
+    }
+  }
+
+  const trefleKey = Deno.env.get("TREFLE_API_KEY");
+  if (trefleKey) {
+    try {
+      const treflePlants = await searchTreflePlants(term, trefleKey);
+      const plants: CatalogPlant[] = treflePlants.slice(0, 20).map((plant) => ({
+        commonName: plant.commonName ?? plant.scientificName,
+        scientificName: plant.scientificName,
+        family: plant.family ?? "Not listed",
+        genus: plant.genus,
+        rank: plant.rank,
+        taxonomicStatus: plant.status,
+        imageUrl: null,
+        source: "trefle",
+      }));
+      if (plants.length > 0) {
+        await enrichCatalogPlants(plants);
+        return jsonResponse({
+          success: true,
+          source: "Trefle",
+          results: plants,
+        });
+      }
+    } catch (error) {
+      console.error(
+        "Trefle search failed:",
         error instanceof Error ? error.name : "unknown error",
       );
     }
@@ -445,26 +464,7 @@ async function handleRequest(request: Request): Promise<Response> {
         };
       });
 
-    let nextImageIndex = 0;
-    const imageLookupCount = plants.length;
-    const imageWorkers = Array.from(
-      { length: Math.min(3, imageLookupCount) },
-      async () => {
-        while (nextImageIndex < imageLookupCount) {
-          const index = nextImageIndex++;
-          const plant = plants[index];
-          if (!plant.acceptedTaxonId) continue;
-
-          const [image, names] = await Promise.all([
-            fetchImageForTaxon(plant.acceptedTaxonId),
-            fetchLocalizedNamesByKey(plant.acceptedTaxonId),
-          ]);
-          if (image) Object.assign(plant, image);
-          Object.assign(plant, names);
-        }
-      },
-    );
-    await Promise.all(imageWorkers);
+    await enrichCatalogPlants(plants);
 
     return jsonResponse({
       success: true,

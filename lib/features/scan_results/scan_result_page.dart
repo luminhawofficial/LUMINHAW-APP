@@ -33,10 +33,15 @@ class _ScanResultPageState extends State<ScanResultPage> {
           const SizedBox(height: 18),
           if (_section == 'Identification')
             _identificationContent(plant, widget.scanResult)
+          else if (_section == 'Biology')
+            PremiumFeatureGate(
+              feature: 'Advanced plant biology',
+              child: _biologyContent(plant, widget.scanResult),
+            )
           else
             PremiumFeatureGate(
-              feature: _section,
-              child: _premiumContent(plant),
+              feature: 'Detailed nutrient information',
+              child: _nutrientContent(plant, widget.scanResult),
             ),
         ],
       ),
@@ -209,6 +214,16 @@ class _ScanResultPageState extends State<ScanResultPage> {
                     height: 1.4,
                   ),
                 ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Provider-sourced information is not necessarily expert-reviewed. '
+                  'Use trusted botanical references for school work.',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11,
+                    height: 1.4,
+                  ),
+                ),
               ],
             ],
           ),
@@ -217,24 +232,330 @@ class _ScanResultPageState extends State<ScanResultPage> {
     );
   }
 
-  Widget _plantDetails(PlantIdentificationResult result) {
-    const groups = [
-      'Plant Information',
-      'Compatible Weather',
-      'Suitable Soil',
-      'Plant Origin',
-      'Growth Information',
-      'Plant Care',
-    ];
-    final visibleFields = result.botanicalInformation.entries.where((entry) {
-      return !const {
-        'commonName',
-        'scientificName',
-        'tagalogName',
-        'bisayaName',
+  Widget _biologyContent(
+    PlantRecord? plant,
+    PlantIdentificationResult? scanResult,
+  ) {
+    if (plant == null) return _noPlantContext();
+    final fields = _profileFields(plant, scanResult);
+    const biologyGroups = <String, List<String>>{
+      'Classification': [
+        'kingdom',
+        'phylum',
+        'taxonomicClass',
+        'order',
         'family',
+        'genus',
+        'species',
+      ],
+      'Description and characteristics': [
         'description',
-      }.contains(entry.key);
+        'characteristics',
+        'classification',
+        'usesBenefits',
+      ],
+      'Origin and habitat': [
+        'originHabitat',
+        'weatherClimate',
+        'climateTypes',
+        'suitability',
+      ],
+      'Life cycle and growth': [
+        'lifespan',
+        'growthCharacteristics',
+        'growthStages',
+        'propagation',
+      ],
+    };
+    final hasBiologyDetails = biologyGroups.values
+        .expand((groupFields) => groupFields)
+        .any(fields.containsKey);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Plant biology: ${plant.commonName}',
+                style: const TextStyle(
+                  color: AppColors.green,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (plant.scientificName.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  plant.scientificName,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              const Text(
+                'Explore how plants function, then review the species-specific '
+                'facts available for this identification. Identification and '
+                'generated details can be wrong, so verify them with your '
+                'course materials or a trusted botanical reference.',
+                style: TextStyle(color: AppColors.muted, height: 1.45),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'How plants function',
+                style: TextStyle(
+                  color: AppColors.green,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const _BiologyLesson(
+                title: 'Photosynthesis',
+                body:
+                    'In photosynthetic plants, chloroplasts capture light energy '
+                    'to make sugars from water and carbon dioxide. Oxygen is '
+                    'released as part of this process.',
+              ),
+              const _BiologyLesson(
+                title: 'Plant structures',
+                body:
+                    'Roots commonly anchor a plant and absorb water and minerals. '
+                    'Stems support the plant and move materials. Leaves are '
+                    'important sites of photosynthesis and gas exchange.',
+              ),
+              const _BiologyLesson(
+                title: 'Growth and reproduction',
+                body:
+                    'Plants grow through cell division and expansion. Their '
+                    'reproductive structures differ: flowering plants form '
+                    'flowers and seeds, while other plant groups may reproduce '
+                    'using cones or spores.',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        for (final group in biologyGroups.entries)
+          if (group.value.any(fields.containsKey)) ...[
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.key,
+                    style: const TextStyle(
+                      color: AppColors.green,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final field in group.value)
+                    if (fields[field] case final value?)
+                      _profileFact(field, value, plant, scanResult),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        if (!hasBiologyDetails)
+          AppCard(
+            child: Text(
+              scanResult?.enrichmentError == null
+                  ? 'Species-specific biology details are not available for this result yet. '
+                        'The general lessons above are not specific to this plant.'
+                  : 'Species-specific biology details could not be loaded. '
+                        'The general lessons above are not specific to this plant.',
+              style: const TextStyle(color: AppColors.muted, height: 1.45),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _nutrientContent(
+    PlantRecord? plant,
+    PlantIdentificationResult? scanResult,
+  ) {
+    if (plant == null) return _noPlantContext();
+    final fields = _profileFields(plant, scanResult);
+    const nutrientFields = [
+      'compost',
+      'fertilizer',
+      'fertilizingFrequency',
+      'nutrientDeficiencies',
+      'fertilizerApplication',
+    ];
+    final hasNutrientDetails = nutrientFields.any(fields.containsKey);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Plant nutrients: ${plant.commonName}',
+                style: const TextStyle(
+                  color: AppColors.green,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Plants need mineral nutrients to grow. Nitrogen supports '
+                'proteins and chlorophyll; phosphorus is part of energy transfer '
+                'and genetic material; potassium supports many cell processes. '
+                'Plants also need smaller amounts of other essential elements.',
+                style: TextStyle(color: AppColors.muted, height: 1.45),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Yellowing, spots, or slow growth do not prove a nutrient '
+                'deficiency. Similar symptoms can come from watering, light, '
+                'pests, disease, or soil conditions. Do not add fertilizer '
+                'based on symptoms alone; check the plant and soil, and follow '
+                'a reliable species-specific reference or soil test.',
+                style: TextStyle(
+                  color: AppColors.dark,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (hasNutrientDetails)
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Available information for this plant',
+                  style: TextStyle(
+                    color: AppColors.green,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final field in nutrientFields)
+                  if (fields[field] case final value?)
+                    _profileFact(field, value, plant, scanResult),
+              ],
+            ),
+          )
+        else
+          AppCard(
+            child: Text(
+              scanResult?.enrichmentError == null
+                  ? 'No species-specific nutrient or fertilizer information is available for this result.'
+                  : 'Species-specific nutrient information could not be loaded.',
+              style: const TextStyle(color: AppColors.muted, height: 1.45),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _profileFact(
+    String field,
+    String value,
+    PlantRecord plant,
+    PlantIdentificationResult? scanResult,
+  ) {
+    final source =
+        scanResult?.informationSources[field] ??
+        plant.enrichmentSources[field] ??
+        plant.source;
+    final status =
+        scanResult?.informationStatuses[field] ??
+        (plant.aiGeneratedFields.contains(field)
+            ? 'AI-Generated'
+            : _fieldStatusForSource(source));
+    return _ProfileFact(
+      label: _informationLabel(field),
+      value: value,
+      status: status,
+      source: source,
+      generatedAt: scanResult?.fieldGeneratedAt[field],
+    );
+  }
+
+  Map<String, String> _profileFields(
+    PlantRecord plant,
+    PlantIdentificationResult? scanResult,
+  ) {
+    final fields = <String, String>{
+      ...plant.enrichedFields,
+      ...?scanResult?.botanicalInformation,
+    };
+
+    void add(String key, String? value) {
+      if (value != null && value.trim().isNotEmpty) {
+        fields.putIfAbsent(key, () => value.trim());
+      }
+    }
+
+    add('commonName', plant.commonName);
+    add('scientificName', plant.scientificName);
+    add('family', plant.family == 'Not listed' ? null : plant.family);
+    add('kingdom', plant.kingdom);
+    add('phylum', plant.phylum);
+    add('taxonomicClass', plant.taxonomicClass);
+    add('order', plant.order);
+    add('genus', plant.genus);
+    add('species', plant.species);
+    add('description', plant.description);
+    return fields;
+  }
+
+  Widget _noPlantContext() => const AppCard(
+    child: Text(
+      'Identify or select a plant first to view its biology and nutrient information.',
+      style: TextStyle(color: AppColors.muted, height: 1.45),
+    ),
+  );
+
+  String _fieldStatusForSource(String? source) {
+    if (source == null || source.isEmpty) return 'Needs Verification';
+    if (RegExp(
+      r'\b(gbif|perenual|trefle|kew|plants of the world online)\b',
+      caseSensitive: false,
+    ).hasMatch(source)) {
+      return 'API Verified';
+    }
+    return 'Needs Verification';
+  }
+
+  Widget _plantDetails(PlantIdentificationResult result) {
+    const groups = ['Plant Information', 'Basic plant care'];
+    const freeFields = {
+      'genus',
+      'species',
+      'dailyCare',
+      'careInstructions',
+      'wateringFrequency',
+      'wateringAmount',
+      'sunlightRequirements',
+    };
+    final visibleFields = result.botanicalInformation.entries.where((entry) {
+      return freeFields.contains(entry.key);
     }).toList();
 
     return Column(
@@ -244,7 +565,7 @@ class _ScanResultPageState extends State<ScanResultPage> {
           _informationGroup(
             group,
             visibleFields,
-            result.unavailableFields,
+            result.unavailableFields.intersection(freeFields),
             result,
           ),
         if (result.botanicalInformation.isEmpty &&
@@ -304,108 +625,14 @@ class _ScanResultPageState extends State<ScanResultPage> {
         ],
       ),
     );
-    if (group == 'Plant Care') {
-      return PremiumFeatureGate(feature: group, child: section);
-    }
     return section;
   }
 
   String _informationGroupFor(String field) {
-    if (const {
-      'genus',
-      'species',
-      'kingdom',
-      'phylum',
-      'taxonomicClass',
-      'order',
-    }.contains(field)) {
+    if (const {'genus', 'species'}.contains(field)) {
       return 'Plant Information';
     }
-    if (const {
-      'weatherClimate',
-      'temperatureRange',
-      'humidity',
-      'climateTypes',
-      'rainfallTolerance',
-      'heatTolerance',
-      'coldSensitivity',
-      'seasonalCare',
-    }.contains(field)) {
-      return 'Compatible Weather';
-    }
-    if (const {
-      'soilCompatibility',
-      'soilPH',
-      'soilDrainage',
-      'soilMoisture',
-      'soilMix',
-      'compost',
-    }.contains(field)) {
-      return 'Suitable Soil';
-    }
-    if (field == 'originHabitat') return 'Plant Origin';
-    if (const {
-      'growthCharacteristics',
-      'growthStages',
-      'lifespan',
-      'repotting',
-      'growingConditions',
-      'classification',
-      'suitability',
-    }.contains(field)) {
-      return 'Growth Information';
-    }
-    return 'Plant Care';
-  }
-
-  Widget _premiumContent(PlantRecord? plant) {
-    return Column(
-      children: [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                plant == null
-                    ? 'Plant context unavailable'
-                    : '$_section for ${plant.commonName}',
-                style: const TextStyle(
-                  color: AppColors.green,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Plant-specific premium information is not available until a verified botanical data source is connected.',
-                style: TextStyle(color: AppColors.muted, height: 1.45),
-              ),
-            ],
-          ),
-        ),
-        if (_section == 'Biology') ...[
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => setState(() => _section = 'Nutrients'),
-            icon: const Icon(Icons.grass_outlined),
-            label: const Text('Explore nutrients'),
-          ),
-          OutlinedButton.icon(
-            onPressed: plant == null
-                ? null
-                : () => Navigator.pushNamed(context, '/care', arguments: plant),
-            icon: const Icon(Icons.menu_book_outlined),
-            label: const Text('Open care guide'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () =>
-                Navigator.pushNamed(context, '/health', arguments: plant),
-            icon: const Icon(Icons.health_and_safety_outlined),
-            label: const Text('Plant health checker'),
-          ),
-        ],
-      ],
-    );
+    return 'Basic plant care';
   }
 
   String _informationLabel(String field) => switch (field) {
@@ -481,7 +708,7 @@ String _fieldStatus(
   }
   final source = result?.informationSources[field] ?? '';
   if (RegExp(
-    r'\b(gbif|perenual|kew|plants of the world online)\b',
+    r'\b(gbif|perenual|trefle|kew|plants of the world online)\b',
     caseSensitive: false,
   ).hasMatch(source)) {
     return 'API Verified';
@@ -535,6 +762,79 @@ class _SectionSelector extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BiologyLesson extends StatelessWidget {
+  const _BiologyLesson({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.dark,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(body, style: const TextStyle(color: AppColors.muted, height: 1.4)),
+      ],
+    ),
+  );
+}
+
+class _ProfileFact extends StatelessWidget {
+  const _ProfileFact({
+    required this.label,
+    required this.value,
+    required this.status,
+    this.source,
+    this.generatedAt,
+  });
+
+  final String label;
+  final String value;
+  final String status;
+  final String? source;
+  final String? generatedAt;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.dark,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(color: AppColors.muted, height: 1.4),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _statusLabel(status, source, generatedAt),
+          style: const TextStyle(
+            color: AppColors.muted,
+            fontSize: 10,
+            height: 1.3,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ResultField extends StatelessWidget {
@@ -625,6 +925,20 @@ class _DetailEntry extends StatelessWidget {
           entry.value,
           style: const TextStyle(color: AppColors.muted, height: 1.4),
         ),
+        if (entry.key == 'nutrientDeficiencies')
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'Leaf symptoms can have several causes. Do not diagnose a deficiency '
+              'or apply fertilizer from symptoms alone; check growing conditions '
+              'and consult a reliable source or soil test.',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: 11,
+                height: 1.4,
+              ),
+            ),
+          ),
         Text(
           _statusLabel(
             statusOverride ??
@@ -648,7 +962,10 @@ class _DetailEntry extends StatelessWidget {
 }
 
 String _statusLabel(String status, String? source, String? generatedAt) {
-  final parts = <String>[status];
+  final displayedStatus = status == 'API Verified'
+      ? 'Provider-sourced'
+      : status;
+  final parts = <String>[displayedStatus];
   if (source != null && source.isNotEmpty) {
     parts.add(
       source.toLowerCase() == 'gemini ai' || source.toLowerCase() == 'gemini'

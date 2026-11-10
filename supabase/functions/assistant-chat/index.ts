@@ -1,15 +1,10 @@
-
 import {
   authenticatedUserId,
   enforceRateLimit,
   requirePremiumEntitlement,
 } from "../_shared/auth.ts";
 
-import {
-  corsHeaders,
-  jsonResponse,
-  readJsonBody,
-} from "../_shared/http.ts";
+import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -222,7 +217,6 @@ Always respect the user's language.
 // =====================================================
 
 Deno.serve(async (request: Request): Promise<Response> => {
-
   // 1. CORS
   if (request.method === "OPTIONS") {
     return new Response("ok", {
@@ -250,28 +244,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   // 4. PREMIUM ENTITLEMENT
-  const entitlementResponse =
-    await requirePremiumEntitlement(userId);
+  const entitlementResponse = await requirePremiumEntitlement(userId);
 
-  let isPremium = true;
+  if (entitlementResponse) return entitlementResponse;
 
-  if (entitlementResponse) {
-    const payload = await entitlementResponse
-      .clone()
-      .json()
-      .catch(() => null);
-
-    const errorCode = payload?.error?.code;
-
-    if (
-      entitlementResponse.status === 403 &&
-      errorCode === "premium_entitlement_required"
-    ) {
-      isPremium = false;
-    } else {
-      return entitlementResponse;
-    }
-  }
+  const rateLimitResponse = await enforceRateLimit(
+    userId,
+    "assistant-chat",
+    30,
+    600,
+  );
+  if (rateLimitResponse) return rateLimitResponse;
 
   // 5. READ REQUEST BODY
   const parsed = await readJsonBody(
@@ -303,8 +286,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   // 6. GEMINI CONFIGURATION
   const apiKey = Deno.env.get("GEMINI_API_KEY");
 
-  const model =
-    Deno.env.get("GEMINI_MODEL") ||
+  const model = Deno.env.get("GEMINI_MODEL") ||
     "gemini-3.6-flash";
 
   if (!apiKey) {
@@ -316,38 +298,6 @@ Deno.serve(async (request: Request): Promise<Response> => {
       },
       503,
     );
-  }
-
-  // 7. FREE DAILY LIMIT
-  if (!isPremium) {
-    const freeDailyLimitResponse =
-      await enforceRateLimit(
-        userId,
-        "assistant-chat-free-daily",
-        10,
-        86_400,
-      );
-
-    if (freeDailyLimitResponse) {
-      if (freeDailyLimitResponse.status === 429) {
-        return jsonResponse(
-          {
-            error: {
-              code: "assistant_free_daily_limit",
-              limit: 10,
-              resetsAt: new Date(
-                (
-                  Math.floor(Date.now() / 86_400_000) + 1
-                ) * 86_400_000,
-              ).toISOString(),
-            },
-          },
-          429,
-        );
-      }
-
-      return freeDailyLimitResponse;
-    }
   }
 
   // 8. CONVERSATION HISTORY
@@ -474,12 +424,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
       const parts = candidate?.content?.parts;
       const replyPart = Array.isArray(parts)
         ? parts
-            .map((part: { text?: unknown }) =>
-              typeof part.text === "string"
-                ? part.text
-                : ""
-            )
-            .join("")
+          .map((part: { text?: unknown }) =>
+            typeof part.text === "string" ? part.text : ""
+          )
+          .join("")
         : "";
 
       // 12. HANDLE EMPTY RESPONSE
@@ -543,15 +491,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
       truncated,
       usageMetadata,
     });
-
   } catch (error) {
-
     // 16. ERROR HANDLING
     console.error(
       "GEMINI_REQUEST_FAILED",
-      error instanceof Error
-        ? error.name
-        : "unknown error",
+      error instanceof Error ? error.name : "unknown error",
     );
 
     return jsonResponse(

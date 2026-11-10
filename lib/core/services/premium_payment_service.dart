@@ -390,9 +390,9 @@ class PremiumPaymentService {
     'monthly_plan_disabled' => 'The 30-day Premium plan is disabled.',
     'yearly_plan_disabled' => 'The 365-day Premium plan is disabled.',
     'monthly_plan_configuration_invalid' => 'The 30-day plan must be PHP 49 for 30 days with QR path plans/GCash-MyQR-49.PNG.jpg.',
-    'yearly_plan_configuration_invalid' => 'The 365-day plan must be PHP 1,499 for 365 days with QR path plans/GCash-MyQR-1499.PNG.jpg.',
+    'yearly_plan_configuration_invalid' => 'The 365-day plan must be PHP 499 for 365 days with QR path plans/GCash-MyQR-499.PNG.jpg.',
     'monthly_qr_unavailable' => 'The private QR object gcash-payment-assets/plans/GCash-MyQR-49.PNG.jpg is missing or cannot be signed.',
-    'yearly_qr_unavailable' => 'The private QR object gcash-payment-assets/plans/GCash-MyQR-1499.PNG.jpg is missing or cannot be signed.',
+    'yearly_qr_unavailable' => 'The private QR object gcash-payment-assets/plans/GCash-MyQR-499.PNG.jpg is missing or cannot be signed.',
     'unsupported_payment_plan_enabled' =>
       'An unsupported Premium payment plan is enabled.',
     _ => 'A required payment readiness check failed. Do not send payment; please try again later.',

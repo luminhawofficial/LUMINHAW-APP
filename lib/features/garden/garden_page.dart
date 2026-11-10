@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
+import 'package:luminhaw/core/services/plant_notification_service.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 
 class GardenPage extends StatefulWidget {
@@ -265,6 +266,26 @@ class _GardenContents extends StatelessWidget {
 
     try {
       await LocalPlantDataStore.instance.removePlant(plantName);
+      try {
+        await refreshEnabledCareReminders();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'care reminder scheduling',
+          ),
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Plant removed, but reminders could not be updated: $error',
+              ),
+            ),
+          );
+        }
+      }
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

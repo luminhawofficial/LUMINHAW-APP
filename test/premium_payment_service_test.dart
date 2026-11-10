@@ -27,11 +27,11 @@ void main() {
           'code': 'premium_365_days',
           'name': 'Premium 365 Days',
           'description': 'Yearly access',
-          'amount_centavos': 149900,
+          'amount_centavos': 49900,
           'currency': 'PHP',
           'duration_days': 365,
-          'qr_storage_path': 'plans/GCash-MyQR-1499.PNG.jpg',
-          'qrImageUrl': 'https://project.supabase.co/storage/v1/object/sign/gcash-payment-assets/plans/GCash-MyQR-1499.PNG.jpg?token=yearly-token',
+          'qr_storage_path': 'plans/GCash-MyQR-499.PNG.jpg',
+          'qrImageUrl': 'https://project.supabase.co/storage/v1/object/sign/gcash-payment-assets/plans/GCash-MyQR-499.PNG.jpg?token=yearly-token',
         },
       ],
       'payments': [
@@ -58,8 +58,8 @@ void main() {
     expect(options.plans.first.qrStoragePath, 'plans/GCash-MyQR-49.PNG.jpg');
     expect(options.plans.first.qrImageUrl, contains('/object/sign/'));
     expect(options.plans.first.qrImageUrl, contains('monthly-token'));
-    expect(options.plans.last.amountCentavos, 149900);
-    expect(options.plans.last.qrStoragePath, 'plans/GCash-MyQR-1499.PNG.jpg');
+    expect(options.plans.last.amountCentavos, 49900);
+    expect(options.plans.last.qrStoragePath, 'plans/GCash-MyQR-499.PNG.jpg');
     expect(options.plans.last.qrImageUrl, contains('/object/sign/'));
     expect(options.plans.last.qrImageUrl, contains('yearly-token'));
     expect(options.plans.first.amountCentavos, 4900);

@@ -141,19 +141,26 @@ class _SavedPlantDetailsPageState extends State<SavedPlantDetailsPage> {
   Widget _plantDetails(PlantRecord plant) {
     final description =
         plant.description ?? plant.enrichedFields['description'];
+    const freeCareFields = {
+      'dailyCare',
+      'careInstructions',
+      'wateringFrequency',
+      'wateringAmount',
+      'sunlightRequirements',
+    };
     final care = plant.enrichedFields.entries
+        .where((entry) => freeCareFields.contains(entry.key))
+        .toList();
+    final advancedDetails = plant.enrichedFields.entries
         .where(
-          (entry) => const {
-            'dailyCare',
-            'careInstructions',
-            'wateringFrequency',
-            'wateringAmount',
-            'wateringDrySeason',
-            'wateringRainySeason',
-            'sunlightRequirements',
-            'fertilizer',
-            'pruning',
-          }.contains(entry.key),
+          (entry) =>
+              !freeCareFields.contains(entry.key) &&
+              entry.key != 'description' &&
+              entry.key != 'family' &&
+              entry.key != 'genus' &&
+              entry.key != 'species' &&
+              entry.key != 'tagalogName' &&
+              entry.key != 'bisayaName',
         )
         .toList();
     final information = <MapEntry<String, String>>[
@@ -266,6 +273,44 @@ class _SavedPlantDetailsPageState extends State<SavedPlantDetailsPage> {
             ],
           ),
         ),
+        if (advancedDetails.isNotEmpty ||
+            plant.kingdom != null ||
+            plant.phylum != null ||
+            plant.taxonomicClass != null ||
+            plant.order != null) ...[
+          const SizedBox(height: 12),
+          PremiumFeatureGate(
+            feature: 'Advanced plant information',
+            child: AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Advanced plant information',
+                    style: TextStyle(
+                      color: AppColors.green,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (plant.kingdom case final value?)
+                    _SavedDetailRow(entry: MapEntry('Kingdom', value)),
+                  if (plant.phylum case final value?)
+                    _SavedDetailRow(entry: MapEntry('Phylum', value)),
+                  if (plant.taxonomicClass case final value?)
+                    _SavedDetailRow(entry: MapEntry('Class', value)),
+                  if (plant.order case final value?)
+                    _SavedDetailRow(entry: MapEntry('Order', value)),
+                  if (plant.formerScientificName case final value?)
+                    _SavedDetailRow(entry: MapEntry('Former name', value)),
+                  for (final entry in advancedDetails)
+                    _SavedDetailRow(
+                      entry: MapEntry(_fieldLabel(entry.key), entry.value),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () => _remove(plant.commonName),

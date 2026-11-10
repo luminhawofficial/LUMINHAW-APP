@@ -430,7 +430,7 @@ void main() {
     await tester.tap(find.text('Subscription & payment'));
     await tester.pumpAndSettle();
     expect(find.text('PHP 49 / 30 days'), findsOneWidget);
-    expect(find.text('PHP 1,499 / 365 days'), findsOneWidget);
+    expect(find.text('PHP 499 / 365 days'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Subscribe Now'), 100);
     final subscribeButton = tester.widget<ElevatedButton>(
       find.widgetWithText(ElevatedButton, 'Subscribe Now').first,
@@ -451,8 +451,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: PremiumPage()));
     await tester.pumpAndSettle();
 
-    expect(find.text('PHP 49 / 30 days'), findsOneWidget);
-    expect(find.text('PHP 1,499 / 365 days'), findsOneWidget);
+    expect(find.text('₱49 / month · ₱499 / year'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

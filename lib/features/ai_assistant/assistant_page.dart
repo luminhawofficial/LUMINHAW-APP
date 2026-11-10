@@ -95,129 +95,132 @@ class _AssistantPageState extends State<AssistantPage> {
             const AppHeader(back: true, dark: true),
 
             Expanded(
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(18, 8, 18, 14),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Column(
-                  children: [
-                    ClipOval(
-                      child: Image.asset(
-                        'assets/images/ai_lumin_logo.png',
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    const Text(
-                      'LUMIN',
-                      style: TextStyle(
-                        color: AppColors.dark,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                      ),
-                    ),
-
-                    const Text(
-                      'Your AI Assistant',
-                      style: TextStyle(color: AppColors.green),
-                    ),
-
-                    const Text(
-                      'Free: 10 messages daily · Premium: unlimited',
-                      style: TextStyle(color: AppColors.muted, fontSize: 11),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // CHAT MESSAGES
-                    Expanded(
-                      child: ListView.builder(
-                        controller: _chatScroll,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        itemCount: _messages.length + 1,
-                        itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return const _ChatBubble(
-                              text: 'Hi, grower! Ask me about plant care, light, or watering.',
-                              fromAssistant: true,
-                            );
-                          }
-
-                          final entry = _messages[index - 1];
-
-                          return _ChatBubble(
-                            text: entry.text,
-                            fromAssistant: entry.fromAssistant,
-                          );
-                        },
-                      ),
-                    ),
-
-                    // LOADING INDICATOR
-                    if (_isSending)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 8),
-                        child: LinearProgressIndicator(
-                          color: AppColors.green,
-                          minHeight: 2,
+              child: PremiumFeatureGate(
+                feature: 'AI plant assistant',
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(18, 8, 18, 14),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    children: [
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/ai_lumin_logo.png',
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
                         ),
                       ),
 
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 10),
 
-                    // MESSAGE INPUT
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _message,
-                            onSubmitted: (_) => _sendMessage(),
-                            textInputAction: TextInputAction.send,
-                            enabled: !_isSending,
-                            maxLines: 4,
-                            minLines: 1,
-                            decoration: InputDecoration(
-                              hintText: 'Ask a plant question...',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                      const Text(
+                        'LUMIN',
+                        style: TextStyle(
+                          color: AppColors.dark,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                        ),
+                      ),
+
+                      const Text(
+                        'Your AI Assistant',
+                        style: TextStyle(color: AppColors.green),
+                      ),
+
+                      const Text(
+                        'Premium feature · Plant-focused AI assistance',
+                        style: TextStyle(color: AppColors.muted, fontSize: 11),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // CHAT MESSAGES
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _chatScroll,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          itemCount: _messages.length + 1,
+                          itemBuilder: (context, index) {
+                            if (index == 0) {
+                              return const _ChatBubble(
+                                text: 'Hi, grower! Ask me about plant care, light, or watering.',
+                                fromAssistant: true,
+                              );
+                            }
+
+                            final entry = _messages[index - 1];
+
+                            return _ChatBubble(
+                              text: entry.text,
+                              fromAssistant: entry.fromAssistant,
+                            );
+                          },
+                        ),
+                      ),
+
+                      // LOADING INDICATOR
+                      if (_isSending)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: LinearProgressIndicator(
+                            color: AppColors.green,
+                            minHeight: 2,
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      // MESSAGE INPUT
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _message,
+                              onSubmitted: (_) => _sendMessage(),
+                              textInputAction: TextInputAction.send,
+                              enabled: !_isSending,
+                              maxLines: 4,
+                              minLines: 1,
+                              decoration: InputDecoration(
+                                hintText: 'Ask a plant question...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
                               ),
                             ),
                           ),
-                        ),
 
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 8),
 
-                        IconButton.filled(
-                          tooltip: 'Send message',
-                          onPressed: _isSending ? null : _sendMessage,
-                          icon: _isSending
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.send),
-                          style: IconButton.styleFrom(
-                            backgroundColor: AppColors.green,
+                          IconButton.filled(
+                            tooltip: 'Send message',
+                            onPressed: _isSending ? null : _sendMessage,
+                            icon: _isSending
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send),
+                            style: IconButton.styleFrom(
+                              backgroundColor: AppColors.green,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

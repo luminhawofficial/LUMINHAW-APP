@@ -148,13 +148,7 @@ class GeminiAssistantService {
     }
 
     return switch (code) {
-      'assistant_free_daily_limit' =>
-        'You have used your 10 free LUMIN AI messages for today. '
-            'Your allowance resets at UTC midnight. '
-            'Upgrade to Premium for unlimited AI chat.',
-
-      'premium_entitlement_required' =>
-        'Could not verify your AI chat access. Please try again later.',
+      'premium_entitlement_required' => 'LUMIN AI is a Premium feature. Subscribe to Premium to use the assistant.',
 
       'assistant_not_configured' =>
         'LUMIN AI is not configured on the server. '
@@ -180,8 +174,7 @@ class GeminiAssistantService {
       'assistant_access_denied' =>
         'LUMIN AI access was denied. Verify your email and account status.',
 
-      'assistant_provider_error' || 'gemini_provider_error' =>
-        'LUMIN AI could not process the request. Check the server function logs.',
+      'assistant_provider_error' || 'gemini_provider_error' => 'LUMIN AI could not process the request. Check the server function logs.',
 
       'assistant_unavailable' => 'LUMIN AI could not be reached. Check the server function logs and try again.',
 

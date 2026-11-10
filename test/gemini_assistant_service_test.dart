@@ -45,18 +45,12 @@ void main() {
     ]);
   });
 
-  test('explains the daily free AI message limit', () {
+  test('explains that the AI assistant requires Premium', () {
     expect(
-      GeminiAssistantService.messageForErrorCode('assistant_free_daily_limit'),
-      contains('10 free LUMIN AI messages'),
-    );
-    expect(
-      GeminiAssistantService.messageForErrorCode('assistant_free_daily_limit'),
-      contains('UTC midnight'),
-    );
-    expect(
-      GeminiAssistantService.messageForErrorCode('assistant_free_daily_limit'),
-      contains('Premium for unlimited AI chat'),
+      GeminiAssistantService.messageForErrorCode(
+        'premium_entitlement_required',
+      ),
+      contains('Premium feature'),
     );
   });
 }

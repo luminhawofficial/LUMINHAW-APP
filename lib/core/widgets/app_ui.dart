@@ -333,8 +333,17 @@ class PremiumFeatureGate extends StatelessWidget {
               const SizedBox(height: 16),
               Text(
                 switch (feature) {
-                  'Plant health screening' => 'Help your plants thrive.',
+                  'Plant health screening' ||
+                  'Plant Health Checker' => 'Help your plants thrive.',
                   'Plant Care' => 'Unlock detailed plant care.',
+                  'Advanced plant biology' => 'Explore advanced plant biology.',
+                  'Detailed nutrient information' =>
+                    'Understand plant nutrients in more detail.',
+                  'Growth and care tracker' =>
+                    'Track growth and plant-care activities.',
+                  'AI plant assistant' => 'Get personalized plant-care help.',
+                  'Advanced plant information' =>
+                    'Unlock more plant science and care details.',
                   _ => 'Every stage matters.',
                 },
                 style: const TextStyle(
@@ -347,9 +356,15 @@ class PremiumFeatureGate extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 switch (feature) {
-                  'Plant health screening' =>
+                  'Plant health screening' || 'Plant Health Checker' =>
                     'Understand plant health and discover possible problems.',
                   'Plant Care' => 'Get plant-specific watering, sunlight, soil, fertilizer, and maintenance guidance.',
+                  'Advanced plant biology' => 'View advanced species biology, growth, habitat, and life-cycle information.',
+                  'Detailed nutrient information' => 'Explore detailed nutrient roles, deficiency information, and fertilizer guidance.',
+                  'Growth and care tracker' => 'Record growth observations, care activities, and plant progress.',
+                  'AI plant assistant' =>
+                    'Ask LUMIN AI for personalized plant-care assistance.',
+                  'Advanced plant information' => 'View expanded species information, growing conditions, and care details.',
                   _ => 'Build better plant care habits and keep an eye on every stage.',
                 },
                 style: const TextStyle(

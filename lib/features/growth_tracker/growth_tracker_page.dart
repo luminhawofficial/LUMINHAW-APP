@@ -7,6 +7,7 @@ import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plant_care_recommendations.dart';
+import 'package:luminhaw/core/services/plant_notification_service.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 
@@ -69,6 +70,7 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
           notes: _notesController.text.trim(),
         ),
       );
+      await _refreshReminderSchedule();
       _notesController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -136,6 +138,7 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
           notes: notes.trim(),
         ),
       );
+      await _refreshReminderSchedule();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Care task saved on this device.')),
@@ -150,6 +153,29 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
     } finally {
       if (mounted) {
         setState(() => _completingTaskIds.remove(recommendation.id));
+      }
+    }
+  }
+
+  Future<void> _refreshReminderSchedule() async {
+    try {
+      await refreshEnabledCareReminders();
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'care reminder scheduling',
+        ),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Care was saved, but its reminder schedule could not be updated: $error',
+            ),
+          ),
+        );
       }
     }
   }
@@ -328,292 +354,304 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
       title: 'Track plant growth',
       subtitle: 'Keep growth observations, photos, and care activities.',
       back: true,
-      child: FutureBuilder<void>(
-        future: _loading,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return AppCard(
-              child: Column(
-                children: [
-                  Text('Could not load your journal: ${snapshot.error}'),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _store.retryLoad();
-                        _loading = _store.load();
-                      });
-                    },
-                    child: const Text('Try again'),
-                  ),
-                ],
-              ),
-            );
-          }
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: Text(
-                'Loading your journal…',
-                style: TextStyle(color: AppColors.muted),
-              ),
-            );
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppCard(
+      child: PremiumFeatureGate(
+        feature: 'Growth and care tracker',
+        child: FutureBuilder<void>(
+          future: _loading,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return AppCard(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.plant == null
-                                ? 'Growth journal'
-                                : '${widget.plant!.commonName} journal',
-                            style: const TextStyle(
-                              color: AppColors.green,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 17,
-                            ),
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () => Navigator.pushNamed(
-                            context,
-                            '/add-entry',
-                            arguments: widget.plant,
-                          ),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add entry'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.green,
-                            foregroundColor: Colors.white,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Care activities',
-                      style: TextStyle(
-                        color: AppColors.green,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ValueListenableBuilder<List<String>>(
-                      valueListenable: _store.gardenPlantNames,
-                      builder: (context, plants, _) {
-                        if (plants.isEmpty) {
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Add a plant to My Garden before recording care activities.',
-                                style: TextStyle(color: AppColors.muted),
-                              ),
-                              TextButton.icon(
-                                onPressed: () =>
-                                    Navigator.pushNamed(context, '/add-plant'),
-                                icon: const Icon(Icons.add),
-                                label: const Text('Add a plant'),
-                              ),
-                            ],
-                          );
-                        }
-                        if (!plants.contains(_plantController.text)) {
-                          _plantController.text = plants.first;
-                        }
-                        return DropdownButtonFormField<String>(
-                          initialValue: _plantController.text,
-                          items: [
-                            for (final name in plants)
-                              DropdownMenuItem(value: name, child: Text(name)),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _plantController.text = value);
-                            }
-                          },
-                          decoration: const InputDecoration(labelText: 'Plant'),
-                        );
+                    Text('Could not load your journal: ${snapshot.error}'),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _store.retryLoad();
+                          _loading = _store.load();
+                        });
                       },
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedActivity,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Watered',
-                          child: Text('Watered'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Fertilized',
-                          child: Text('Fertilized'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Pruned',
-                          child: Text('Pruned'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Repotted',
-                          child: Text('Repotted'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _selectedActivity = value);
-                        }
-                      },
-                      decoration: const InputDecoration(labelText: 'Activity'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _notesController,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Notes',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    PrimaryButton(
-                      label: _isSaving ? 'Saving…' : 'Save care activity',
-                      onPressed: _isSaving ? null : _saveCareActivity,
+                      child: const Text('Try again'),
                     ),
                   ],
                 ),
-              ),
-              _buildCarePlan(),
-              const SizedBox(height: 16),
-              const Text(
-                'Recent activity',
-                style: TextStyle(
-                  color: AppColors.green,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
+              );
+            }
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(
+                child: Text(
+                  'Loading your journal…',
+                  style: TextStyle(color: AppColors.muted),
                 ),
-              ),
-              const SizedBox(height: 8),
-              ValueListenableBuilder<List<GrowthEntry>>(
-                valueListenable: _store.growthEntries,
-                builder: (context, entries, _) {
-                  final visibleEntries = entries
-                      .where(
-                        (entry) =>
-                            widget.plant == null ||
-                            entry.plantName == widget.plant!.commonName,
-                      )
-                      .take(10)
-                      .toList();
-                  if (visibleEntries.isEmpty) {
-                    return const AppCard(
-                      child: Text(
-                        'No growth or care entries yet.',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                    );
-                  }
-                  return Column(
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final entry in visibleEntries)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: AppCard(
-                            child: Column(
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.plant == null
+                                  ? 'Growth journal'
+                                  : '${widget.plant!.commonName} journal',
+                              style: const TextStyle(
+                                color: AppColors.green,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 17,
+                              ),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => Navigator.pushNamed(
+                              context,
+                              '/add-entry',
+                              arguments: widget.plant,
+                            ),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add entry'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.green,
+                              foregroundColor: Colors.white,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Care activities',
+                        style: TextStyle(
+                          color: AppColors.green,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ValueListenableBuilder<List<String>>(
+                        valueListenable: _store.gardenPlantNames,
+                        builder: (context, plants, _) {
+                          if (plants.isEmpty) {
+                            return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${entry.plantName} · ${entry.activity}',
-                                        style: const TextStyle(
-                                          color: AppColors.green,
-                                          fontWeight: FontWeight.w700,
+                                const Text(
+                                  'Add a plant to My Garden before recording care activities.',
+                                  style: TextStyle(color: AppColors.muted),
+                                ),
+                                TextButton.icon(
+                                  onPressed: () => Navigator.pushNamed(
+                                    context,
+                                    '/add-plant',
+                                  ),
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Add a plant'),
+                                ),
+                              ],
+                            );
+                          }
+                          if (!plants.contains(_plantController.text)) {
+                            _plantController.text = plants.first;
+                          }
+                          return DropdownButtonFormField<String>(
+                            initialValue: _plantController.text,
+                            items: [
+                              for (final name in plants)
+                                DropdownMenuItem(
+                                  value: name,
+                                  child: Text(name),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _plantController.text = value);
+                              }
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Plant',
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedActivity,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'Watered',
+                            child: Text('Watered'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Fertilized',
+                            child: Text('Fertilized'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Pruned',
+                            child: Text('Pruned'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Repotted',
+                            child: Text('Repotted'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _selectedActivity = value);
+                          }
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Activity',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _notesController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      PrimaryButton(
+                        label: _isSaving ? 'Saving…' : 'Save care activity',
+                        onPressed: _isSaving ? null : _saveCareActivity,
+                      ),
+                    ],
+                  ),
+                ),
+                _buildCarePlan(),
+                const SizedBox(height: 16),
+                const Text(
+                  'Recent activity',
+                  style: TextStyle(
+                    color: AppColors.green,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ValueListenableBuilder<List<GrowthEntry>>(
+                  valueListenable: _store.growthEntries,
+                  builder: (context, entries, _) {
+                    final visibleEntries = entries
+                        .where(
+                          (entry) =>
+                              widget.plant == null ||
+                              entry.plantName == widget.plant!.commonName,
+                        )
+                        .take(10)
+                        .toList();
+                    if (visibleEntries.isEmpty) {
+                      return const AppCard(
+                        child: Text(
+                          'No growth or care entries yet.',
+                          style: TextStyle(color: AppColors.muted),
+                        ),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final entry in visibleEntries)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: AppCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          '${entry.plantName} · ${entry.activity}',
+                                          style: const TextStyle(
+                                            color: AppColors.green,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                      Text(
+                                        _formatDate(entry.date),
+                                        style: const TextStyle(
+                                          color: AppColors.muted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (entry.heightCm != null ||
+                                      entry.leafCount != null) ...[
+                                    const SizedBox(height: 5),
                                     Text(
-                                      _formatDate(entry.date),
+                                      [
+                                        if (entry.heightCm != null)
+                                          '${entry.heightCm} cm',
+                                        if (entry.leafCount != null)
+                                          '${entry.leafCount} leaves',
+                                      ].join(' · '),
                                       style: const TextStyle(
                                         color: AppColors.muted,
-                                        fontSize: 11,
+                                        fontSize: 12,
                                       ),
                                     ),
                                   ],
-                                ),
-                                if (entry.heightCm != null ||
-                                    entry.leafCount != null) ...[
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    [
-                                      if (entry.heightCm != null)
-                                        '${entry.heightCm} cm',
-                                      if (entry.leafCount != null)
-                                        '${entry.leafCount} leaves',
-                                    ].join(' · '),
-                                    style: const TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 12,
+                                  if (entry.notes.isNotEmpty) ...[
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      entry.notes,
+                                      style: const TextStyle(
+                                        color: AppColors.muted,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
+                                  ],
+                                  if (entry.photoPath != null ||
+                                      entry.photoDataBase64 != null) ...[
+                                    const SizedBox(height: 8),
+                                    _GrowthEntryPhoto(entry: entry),
+                                  ],
                                 ],
-                                if (entry.notes.isNotEmpty) ...[
-                                  const SizedBox(height: 5),
-                                  Text(
-                                    entry.notes,
-                                    style: const TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                                if (entry.photoPath != null ||
-                                    entry.photoDataBase64 != null) ...[
-                                  const SizedBox(height: 8),
-                                  _GrowthEntryPhoto(entry: entry),
-                                ],
-                              ],
+                              ),
                             ),
                           ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                ValueListenableBuilder<Object?>(
+                  valueListenable: _store.loadError,
+                  builder: (context, error, _) => error == null
+                      ? SetupNotice(
+                          message: _store.isCloudSynced
+                              ? 'Your journal is synced to your verified account.'
+                              : 'Journal entries are saved on this device. Sign in with a verified account to sync them.',
+                        )
+                      : AppCard(
+                          child: Column(
+                            children: [
+                              Text('Could not sync your journal: $error'),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _store.retryLoad();
+                                    _loading = _store.load();
+                                  });
+                                },
+                                child: const Text('Try again'),
+                              ),
+                            ],
+                          ),
                         ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              ValueListenableBuilder<Object?>(
-                valueListenable: _store.loadError,
-                builder: (context, error, _) => error == null
-                    ? SetupNotice(
-                        message: _store.isCloudSynced
-                            ? 'Your journal is synced to your verified account.'
-                            : 'Journal entries are saved on this device. Sign in with a verified account to sync them.',
-                      )
-                    : AppCard(
-                        child: Column(
-                          children: [
-                            Text('Could not sync your journal: $error'),
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _store.retryLoad();
-                                  _loading = _store.load();
-                                });
-                              },
-                              child: const Text('Try again'),
-                            ),
-                          ],
-                        ),
-                      ),
-              ),
-            ],
-          );
-        },
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -816,137 +854,140 @@ class _AddGrowthEntryPageState extends State<AddGrowthEntryPage> {
       title: 'Add entry',
       subtitle: 'Record a growth observation for your plant.',
       back: true,
-      child: Form(
-        key: _formKey,
-        child: AppCard(
-          child: Column(
-            children: [
-              ValueListenableBuilder<List<String>>(
-                valueListenable: _store.gardenPlantNames,
-                builder: (context, plants, _) {
-                  if (plants.isEmpty) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+      child: PremiumFeatureGate(
+        feature: 'Growth and care tracker',
+        child: Form(
+          key: _formKey,
+          child: AppCard(
+            child: Column(
+              children: [
+                ValueListenableBuilder<List<String>>(
+                  valueListenable: _store.gardenPlantNames,
+                  builder: (context, plants, _) {
+                    if (plants.isEmpty) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Add a plant to My Garden before recording growth.',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                          TextButton.icon(
+                            onPressed: () =>
+                                Navigator.pushNamed(context, '/add-plant'),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add a plant'),
+                          ),
+                        ],
+                      );
+                    }
+                    if (!plants.contains(_selectedPlant)) {
+                      _selectedPlant = plants.first;
+                    }
+                    return DropdownButtonFormField<String>(
+                      initialValue: _selectedPlant,
+                      decoration: const InputDecoration(labelText: 'Plant'),
+                      items: [
+                        for (final name in plants)
+                          DropdownMenuItem(value: name, child: Text(name)),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedPlant = value);
+                        }
+                      },
+                      validator: (value) => value == null
+                          ? 'Choose a plant from your garden'
+                          : null,
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Observation date',
+                  ),
+                  child: InkWell(
+                    onTap: _chooseDate,
+                    child: Row(
                       children: [
-                        const Text(
-                          'Add a plant to My Garden before recording growth.',
-                          style: TextStyle(color: AppColors.muted),
-                        ),
-                        TextButton.icon(
-                          onPressed: () =>
-                              Navigator.pushNamed(context, '/add-plant'),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add a plant'),
+                        Expanded(child: Text(_formatDate(_date))),
+                        const Icon(
+                          Icons.calendar_today_outlined,
+                          color: AppColors.green,
                         ),
                       ],
-                    );
-                  }
-                  if (!plants.contains(_selectedPlant)) {
-                    _selectedPlant = plants.first;
-                  }
-                  return DropdownButtonFormField<String>(
-                    initialValue: _selectedPlant,
-                    decoration: const InputDecoration(labelText: 'Plant'),
-                    items: [
-                      for (final name in plants)
-                        DropdownMenuItem(value: name, child: Text(name)),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _selectedPlant = value);
-                      }
-                    },
-                    validator: (value) => value == null
-                        ? 'Choose a plant from your garden'
-                        : null,
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-              InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Observation date',
-                ),
-                child: InkWell(
-                  onTap: _chooseDate,
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(_formatDate(_date))),
-                      const Icon(
-                        Icons.calendar_today_outlined,
-                        color: AppColors.green,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _heightController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _heightController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Height (cm)',
+                    hintText: 'Optional',
+                  ),
+                  validator: _validateNumber,
                 ),
-                decoration: const InputDecoration(
-                  labelText: 'Height (cm)',
-                  hintText: 'Optional',
+                TextFormField(
+                  controller: _leafCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Number of leaves',
+                    hintText: 'Optional',
+                  ),
+                  validator: _validateLeafCount,
                 ),
-                validator: _validateNumber,
-              ),
-              TextFormField(
-                controller: _leafCountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Number of leaves',
-                  hintText: 'Optional',
-                ),
-                validator: _validateLeafCount,
-              ),
-              TextFormField(
-                controller: _notesController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Observation notes',
-                  hintText: 'A new leaf appeared today...',
-                ),
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Growth photo (optional, up to 2 MB)',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              const SizedBox(height: 6),
-              if (_photoBytes case final bytes?) ...[
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.memory(
-                    bytes,
-                    height: 140,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
+                TextFormField(
+                  controller: _notesController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Observation notes',
+                    hintText: 'A new leaf appeared today...',
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: _isSaving
-                      ? null
-                      : () => setState(() => _photoBytes = null),
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Remove photo'),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Growth photo (optional, up to 2 MB)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
-              ] else
-                OutlinedButton.icon(
-                  onPressed: _isSaving ? null : _pickPhoto,
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  label: const Text('Upload Photo'),
+                const SizedBox(height: 6),
+                if (_photoBytes case final bytes?) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.memory(
+                      bytes,
+                      height: 140,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _isSaving
+                        ? null
+                        : () => setState(() => _photoBytes = null),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Remove photo'),
+                  ),
+                ] else
+                  OutlinedButton.icon(
+                    onPressed: _isSaving ? null : _pickPhoto,
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                    label: const Text('Upload Photo'),
+                  ),
+                const SizedBox(height: 12),
+                PrimaryButton(
+                  label: _isSaving ? 'Saving…' : 'Save observation',
+                  onPressed: _isSaving ? null : _saveObservation,
                 ),
-              const SizedBox(height: 12),
-              PrimaryButton(
-                label: _isSaving ? 'Saving…' : 'Save observation',
-                onPressed: _isSaving ? null : _saveObservation,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

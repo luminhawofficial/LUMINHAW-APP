@@ -4,7 +4,7 @@ import 'package:luminhaw/core/constants/app_colors.dart';
 class LuminAssistantOverlay extends StatelessWidget {
   const LuminAssistantOverlay({
     required this.child,
-    this.aboveBottomBar = false,
+    this.aboveBottomBar = true,
     super.key,
   });
 

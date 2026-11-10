@@ -8,18 +8,24 @@ class PremiumPage extends StatelessWidget {
   const PremiumPage({super.key});
 
   static const _freeBenefits = [
-    'Identify plants',
-    'Explore the plant library',
-    'Save plant details',
+    'Plant identification (camera or upload)',
+    'Common and scientific names',
+    'Family, genus, and species',
+    'Basic plant description and care instructions',
+    'Tagalog and Cebuano/Bisaya names',
+    'Basic plant library information',
+    'Recent scans and saved plants',
   ];
 
   static const _premiumBenefits = [
+    'Everything in Free',
     'Advanced plant biology',
-    'Nutrient information',
-    'Plant health diagnosis',
-    'Detailed care guides',
-    'Plant growth tracking',
-    'Unlimited AI assistant access',
+    'Detailed nutrient information',
+    'AI plant health and disease screening',
+    'Personalized care guides',
+    'Growth and care tracker',
+    'AI plant assistant',
+    'Advanced AI plant information',
   ];
 
   @override
@@ -87,17 +93,18 @@ class PremiumPage extends StatelessWidget {
                             _PlanCard(
                               logo: 'assets/images/Free_logo .png',
                               name: 'FREE',
-                              price: 'Free',
-                              description: 'Essential tools to get started',
+                              price: '₱0',
+                              description:
+                                  'Essential plant identification and learning',
                               benefits: _freeBenefits,
                               selected: !isPremium,
                             ),
                             const SizedBox(height: 14),
                             _PlanCard(
                               logo: 'assets/images/Premium_logo .png',
-                              name: 'PRO',
-                              price: 'PHP 49 / 30 days',
-                              description: 'PHP 1,499 / 365 days',
+                              name: 'PREMIUM',
+                              price: '₱49 / month · ₱499 / year',
+                              description: 'Advanced plant science and AI-powered plant care',
                               benefits: _premiumBenefits,
                               selected: isPremium,
                               premium: true,

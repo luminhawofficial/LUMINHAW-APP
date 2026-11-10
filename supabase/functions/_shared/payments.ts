@@ -19,10 +19,10 @@ export const REQUIRED_GCASH_PLANS = [
   },
   {
     code: "premium_365_days",
-    amount_centavos: 149900,
+    amount_centavos: 49900,
     currency: "PHP",
     duration_days: 365,
-    qr_storage_path: "plans/GCash-MyQR-1499.PNG.jpg",
+    qr_storage_path: "plans/GCash-MyQR-499.PNG.jpg",
     readinessPrefix: "yearly",
   },
 ] as const;

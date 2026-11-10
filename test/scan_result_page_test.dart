@@ -31,11 +31,14 @@ void main() {
       tagalogName: 'Papaya',
       bisayaName: 'Kapayas',
       botanicalInformation: const {
+        'description': 'A tropical fruiting plant in the family Caricaceae.',
+        'characteristics': 'Large leaves grow near the top of the trunk.',
         'weatherClimate': 'Warm tropical climate with full sunlight.',
         'soilCompatibility': 'Well-drained loamy soil.',
         'originHabitat': 'Native to tropical America.',
         'growthCharacteristics': 'Fast-growing; size varies by cultivar.',
         'wateringFrequency': 'Water when the topsoil begins to dry.',
+        'nutrientDeficiencies': 'Older leaves may yellow when nitrogen is low.',
         'genus': 'Carica',
         'species': 'papaya',
       },
@@ -49,6 +52,7 @@ void main() {
         'originHabitat': 'LUMIN AI (Gemini)',
         'growthCharacteristics': 'Perenual',
         'wateringFrequency': 'LUMIN AI (Gemini)',
+        'nutrientDeficiencies': 'LUMIN AI (Gemini)',
         'genus': 'Plant.ID',
         'species': 'Plant.ID',
       },
@@ -62,6 +66,7 @@ void main() {
         'originHabitat': 'AI-Generated',
         'growthCharacteristics': 'API Verified',
         'wateringFrequency': 'AI-Generated',
+        'nutrientDeficiencies': 'AI-Generated',
         'genus': 'Needs Verification',
         'species': 'Needs Verification',
         'humidity': 'Unavailable',
@@ -72,6 +77,7 @@ void main() {
         'soilCompatibility',
         'originHabitat',
         'wateringFrequency',
+        'nutrientDeficiencies',
       },
       fieldGeneratedAt: const {
         'bisayaName': '2026-11-08T12:00:00Z',
@@ -92,22 +98,66 @@ void main() {
     expect(find.text('English name'), findsOneWidget);
     expect(find.text('Papaya'), findsWidgets);
     expect(find.text('Tagalog name'), findsOneWidget);
-    expect(find.text('API Verified · GBIF'), findsOneWidget);
+    expect(find.text('Provider-sourced · GBIF'), findsOneWidget);
     expect(find.text('Cebuano/Bisaya name'), findsOneWidget);
     expect(
       find.textContaining('AI-Generated · LUMIN AI (Gemini)'),
       findsWidgets,
     );
     expect(find.text('Plant Information'), findsOneWidget);
-    expect(find.text('Compatible Weather'), findsOneWidget);
-    expect(find.text('Suitable Soil'), findsOneWidget);
-    expect(find.text('Plant Origin'), findsOneWidget);
-    expect(find.text('Growth Information'), findsOneWidget);
+    expect(find.text('Basic plant care'), findsOneWidget);
+    expect(find.text('Compatible Weather'), findsNothing);
+    expect(find.text('Suitable Soil'), findsNothing);
+    expect(find.text('Plant Origin'), findsNothing);
+    expect(find.text('Growth Information'), findsNothing);
     expect(find.text('Unlock detailed plant care.'), findsNothing);
     expect(find.text('Watering frequency'), findsOneWidget);
     expect(find.text('Water when the topsoil begins to dry.'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Provider-sourced information is not necessarily expert-reviewed.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Explore Subscription'), findsNothing);
-    expect(find.text('Unavailable'), findsWidgets);
+    expect(find.text('Unavailable'), findsNothing);
     expect(find.text('Library'), findsNothing);
+
+    await tester.tap(find.text('Biology'));
+    await tester.pumpAndSettle();
+    expect(find.text('Premium feature'), findsOneWidget);
+    expect(find.text('Plant biology: Papaya'), findsNothing);
+
+    PlanEntitlementStore.instance.tier.value = PlanTier.premium;
+    await tester.pumpAndSettle();
+    expect(find.text('Plant biology: Papaya'), findsOneWidget);
+    expect(find.text('How plants function'), findsOneWidget);
+    expect(find.text('Photosynthesis'), findsOneWidget);
+    expect(find.text('Classification'), findsOneWidget);
+    expect(find.text('Description and characteristics'), findsOneWidget);
+    expect(find.text('Origin and habitat'), findsOneWidget);
+    expect(find.text('Life cycle and growth'), findsOneWidget);
+    expect(find.text('Growth characteristics'), findsOneWidget);
+    expect(find.text('Premium feature'), findsNothing);
+
+    await tester.tap(find.text('Nutrients'));
+    await tester.pumpAndSettle();
+    expect(find.text('Plant nutrients: Papaya'), findsOneWidget);
+    expect(
+      find.textContaining('Nitrogen supports proteins and chlorophyll;'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Do not add fertilizer based on symptoms alone'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Yellowing, spots, or slow growth do not prove a nutrient deficiency.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Available information for this plant'), findsOneWidget);
+    expect(find.text('Premium feature'), findsNothing);
   });
 }

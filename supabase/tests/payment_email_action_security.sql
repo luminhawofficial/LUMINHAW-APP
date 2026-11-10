@@ -403,7 +403,7 @@ values
     '00000000-0000-4000-8000-000000000204',
     '00000000-0000-4000-8000-000000000103',
     (select id from public.payment_plans where code = 'premium_365_days'),
-    149900,
+    49900,
     'PHP',
     'LUM-PGTEST-EMAIL-004',
     'under_review',

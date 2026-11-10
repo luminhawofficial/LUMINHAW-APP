@@ -6,9 +6,9 @@ class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
   static const _features = [
-    'Search online plant records',
-    'Manage garden and growth records on this device or sync them to a verified account',
-    'View plant-care information screens',
+    'Free plant identification, basic library information, recent scans, and saved plants',
+    'Premium advanced biology, nutrient information, AI health screening, detailed care guides, growth tracking, and the AI assistant',
+    'Manage garden records on this device or sync them to a verified account',
     'Identify a plant after confirming photo processing',
     'Review cloud scan history when connected',
   ];
@@ -24,7 +24,7 @@ class AboutPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'LUMINHAW helps plant lovers learn about plants and build thoughtful care routines. Account access uses Supabase Authentication. Garden, care, and growth records stay on this device when signed out and sync to an owner-scoped account when signed in with verified email. Saved Library plant details remain device-only and are separate from My Garden. Existing device-only records are not automatically uploaded. Plant identification can use Plant.ID with PlantNet fallback, and plant search can use Perenual with GBIF fallback when the Edge Functions and provider configuration are available. LUMIN AI uses Gemini; free accounts can send 10 messages per UTC day and verified Premium accounts have no daily message quota. Catalog entries are shown only when returned by an online provider.',
+              'LUMINHAW helps plant lovers learn about plants and build thoughtful care routines. Free access includes plant identification, basic plant information and care, local names, recent scans, and saved plants. Premium adds advanced biology and nutrients, AI health screening, detailed care guides, growth tracking, and the AI assistant. Account access uses Supabase Authentication. Garden records stay on this device when signed out and sync to an owner-scoped account when signed in with verified email. Saved Library plant details remain device-only and are separate from My Garden. Existing device-only records are not automatically uploaded. Plant identification can use Plant.ID with PlantNet fallback, and plant search can use Perenual with GBIF fallback when the Edge Functions and provider configuration are available. LUMIN AI uses Gemini and requires verified Premium entitlement. Catalog entries are shown only when returned by an online provider.',
               style: TextStyle(color: AppColors.muted, height: 1.55),
             ),
             const SizedBox(height: 20),
@@ -91,7 +91,11 @@ class PrivacyPage extends StatelessWidget {
             ),
             _DisclosureSection(
               title: 'Photos and external services',
-              body: 'A photo selected for plant identification is sent to the configured Supabase Edge Function and Plant.ID, with PlantNet fallback, for analysis only after you confirm in the scanner. The identification image is sent for processing and is not saved to the app storage bucket; scan status and results are saved in your Supabase scan history. Plant-health photos are uploaded to the private per-user photo bucket for assessment, and their assessment records are saved to your account. Optional payment receipts are stored in private Supabase storage and may be linked to the designated payment-review email using an expiring signed URL. Payment references, dates, and statuses are stored with payment requests. A photo that is not submitted stays on this device. When you send a message to LUMIN AI, the message and up to six recent conversation messages are sent through the Supabase Edge Function to Gemini. Free accounts have 10 AI messages per UTC day; verified Premium accounts have no daily message quota. Catalog search terms may be sent to Perenual or the public GBIF API. Review provider privacy and retention terms before release.',
+              body: 'A photo selected for plant identification is sent to the configured Supabase Edge Function and Plant.ID, with PlantNet fallback, for analysis only after you confirm in the scanner. The identification image is sent for processing and is not saved to the app storage bucket; scan status and results are saved in your Supabase scan history. Plant-health photos are uploaded to the private per-user photo bucket for assessment, and their assessment records are saved to your account. Plant health screening requires verified Premium entitlement. Optional payment receipts are stored in private Supabase storage and may be linked to the designated payment-review email using an expiring signed URL. Payment references, dates, and statuses are stored with payment requests. A photo that is not submitted stays on this device. LUMIN AI requires verified Premium entitlement; when you send a message, the message and up to six recent conversation messages are sent through the Supabase Edge Function to Gemini. Catalog search terms may be sent to Perenual or the public GBIF API. Review provider privacy and retention terms before release.',
+            ),
+            _DisclosureSection(
+              title: 'Notifications',
+              body: 'Care reminders are opt-in local notifications scheduled on this device from plants saved in My Garden. The reminder preference and schedules are stored locally, and notification text may appear on the device lock screen. System announcements are app-wide public messages loaded from the configured Supabase project; do not include private account data in announcements.',
             ),
             _DisclosureSection(
               title: 'Account data',

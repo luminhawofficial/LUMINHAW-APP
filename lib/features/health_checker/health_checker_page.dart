@@ -256,16 +256,6 @@ class _HealthCheckerPageState extends State<HealthCheckerPage> {
 
   Future<void> _refreshEntitlement() async {
     final entitlements = PlanEntitlementStore.instance;
-    if (entitlements.isTestingPremiumAccessEnabled) {
-      if (mounted) {
-        setState(() {
-          _entitlementLoaded = true;
-          _entitlementUnavailable = false;
-        });
-      }
-      return;
-    }
-
     try {
       await entitlements.refreshFromServer();
       if (mounted) {

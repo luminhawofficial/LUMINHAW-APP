@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
+import 'package:luminhaw/core/services/plant_notification_service.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 
 class AddGardenPlantPage extends StatefulWidget {
@@ -109,10 +110,29 @@ class _AddGardenPlantPageState extends State<AddGardenPlantPage> {
           return;
         }
       }
+      String? reminderError;
+      try {
+        await refreshEnabledCareReminders();
+      } catch (error, stackTrace) {
+        reminderError = error.toString();
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'care reminder scheduling',
+          ),
+        );
+      }
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$name was added to My Garden.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            reminderError == null
+                ? '$name was added to My Garden.'
+                : '$name was added, but reminders could not be updated: $reminderError',
+          ),
+        ),
+      );
       Navigator.pop(context);
     } catch (error) {
       _showMessage('Could not add this plant: $error');

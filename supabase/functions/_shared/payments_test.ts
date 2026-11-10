@@ -19,10 +19,10 @@ const configuredPlans: GcashPaymentPlan[] = [
   {
     code: "premium_365_days",
     enabled: true,
-    amount_centavos: 149900,
+    amount_centavos: 49900,
     currency: "PHP",
     duration_days: 365,
-    qr_storage_path: "plans/GCash-MyQR-1499.PNG.jpg",
+    qr_storage_path: "plans/GCash-MyQR-499.PNG.jpg",
   },
 ];
 
@@ -68,6 +68,17 @@ Deno.test("payment readiness requires the exact enabled plans and QR mappings", 
   const issues = paymentReadinessIssues(readinessInput(incorrectPrice));
   if (!issues.includes("monthly_plan_configuration_invalid")) {
     throw new Error("An incorrect plan price must block checkout.");
+  }
+
+  const incorrectYearlyPrice = configuredPlans.map((plan) =>
+    plan.code === "premium_365_days" ? { ...plan, amount_centavos: 149900 } : plan
+  );
+  if (
+    !paymentReadinessIssues(readinessInput(incorrectYearlyPrice)).includes(
+      "yearly_plan_configuration_invalid",
+    )
+  ) {
+    throw new Error("The former yearly price must block checkout.");
   }
 
   const missingYearly = configuredPlans.filter(

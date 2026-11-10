@@ -379,17 +379,30 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
   Widget build(BuildContext context) {
     final plant = widget.plant;
     final enrichedFields = _enrichment?.fields ?? const <String, String>{};
-    final informationFields = _plantInformationFields(plant, enrichedFields);
+    final allInformationFields = _plantInformationFields(plant, enrichedFields);
+    final informationFields = Map.fromEntries(
+      allInformationFields.entries.where(
+        (entry) => _isFreePlantInformationField(entry.key),
+      ),
+    );
+    final advancedInformationFields = Map.fromEntries(
+      allInformationFields.entries.where(
+        (entry) => !_isFreePlantInformationField(entry.key),
+      ),
+    );
     final basicCareFields = enrichedFields.entries
         .where((entry) => _isBasicCareField(entry.key))
         .toList();
-    final additionalFields = enrichedFields.entries
-        .where(
-          (entry) =>
-              !_isBasicCareField(entry.key) &&
-              !_isPlantInformationField(entry.key),
-        )
-        .toList();
+    final displayedInformationKeys = allInformationFields.keys.toSet();
+    final additionalFields = [
+      ...advancedInformationFields.entries,
+      ...enrichedFields.entries.where(
+        (entry) =>
+            !_isBasicCareField(entry.key) &&
+            !displayedInformationKeys.contains(entry.key) &&
+            entry.key != 'description',
+      ),
+    ];
     final description = plant.description ?? enrichedFields['description'];
     final hasAdditionalBotanicalDetails =
         informationFields.keys.any((key) => key != 'scientificName') ||
@@ -575,85 +588,88 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
             ),
           ),
           const SizedBox(height: 12),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Growing and care information',
-                  style: TextStyle(
-                    color: AppColors.green,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (_isLoadingEnrichment)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(14),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                else if (_enrichmentError != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _enrichmentErrorMessage(_enrichmentError!),
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          height: 1.4,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _loadEnrichment,
-                        child: const Text('Try again'),
-                      ),
-                    ],
-                  )
-                else if (additionalFields.isEmpty &&
-                    (_enrichment?.unavailableFields.isEmpty ?? true))
+          PremiumFeatureGate(
+            feature: 'Advanced plant information',
+            child: AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   const Text(
-                    'No additional care information is available from the connected sources.',
-                    style: TextStyle(color: AppColors.muted, height: 1.4),
-                  )
-                else ...[
-                  if (_enrichment!.error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'Some details could not be enriched: ${_enrichment!.error}',
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  for (final entry in additionalFields)
-                    _EnrichmentField(entry: entry, enrichment: _enrichment!),
-                  if (_enrichment!.unavailableFields.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'No reliable details available for: '
-                        '${_enrichment!.unavailableFields.map(_fieldLabel).join(', ')}.',
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  const Text(
-                    'Care recommendations are general guidance. Adjust watering to soil moisture, pot size, drainage, temperature, humidity, and rainfall.',
+                    'Advanced plant information',
                     style: TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 11,
-                      height: 1.4,
+                      color: AppColors.green,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  if (_isLoadingEnrichment)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(14),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (_enrichmentError != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _enrichmentErrorMessage(_enrichmentError!),
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            height: 1.4,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _loadEnrichment,
+                          child: const Text('Try again'),
+                        ),
+                      ],
+                    )
+                  else if (additionalFields.isEmpty &&
+                      (_enrichment?.unavailableFields.isEmpty ?? true))
+                    const Text(
+                      'No additional plant information is available from the connected sources.',
+                      style: TextStyle(color: AppColors.muted, height: 1.4),
+                    )
+                  else ...[
+                    if (_enrichment!.error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Some details could not be enriched: ${_enrichment!.error}',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    for (final entry in additionalFields)
+                      _EnrichmentField(entry: entry, enrichment: _enrichment!),
+                    if (_enrichment!.unavailableFields.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'No reliable details available for: '
+                          '${_enrichment!.unavailableFields.map(_fieldLabel).join(', ')}.',
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    const Text(
+                      'Care recommendations are general guidance. Adjust watering to soil moisture, pot size, drainage, temperature, humidity, and rainfall.',
+                      style: TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -704,24 +720,13 @@ Map<String, String> _plantInformationFields(
   return fields;
 }
 
-bool _isPlantInformationField(String key) => const {
+bool _isFreePlantInformationField(String key) => const {
   'scientificName',
   'family',
   'genus',
   'species',
-  'kingdom',
-  'phylum',
-  'taxonomicClass',
-  'taxonomicRank',
   'tagalogName',
   'bisayaName',
-  'description',
-  'characteristics',
-  'originHabitat',
-  'classification',
-  'suitability',
-  'lifespan',
-  'usesBenefits',
 }.contains(key);
 
 bool _isBasicCareField(String key) => const {
@@ -729,16 +734,7 @@ bool _isBasicCareField(String key) => const {
   'careInstructions',
   'wateringFrequency',
   'wateringAmount',
-  'wateringDrySeason',
-  'wateringRainySeason',
-  'soilMoistureCheck',
-  'overwateringSigns',
-  'underwateringSigns',
-  'growthStageWatering',
   'sunlightRequirements',
-  'sunlightHours',
-  'lowLightSigns',
-  'excessiveLightSigns',
 }.contains(key);
 
 bool _isCatalogCarePlaceholder(String value) {

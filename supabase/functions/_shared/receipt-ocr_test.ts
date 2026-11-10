@@ -143,7 +143,7 @@ Deno.test("wrong amount is routed to manual review", () => {
     submittedReference: "1234567890123",
     submittedDate: "2026-11-06",
     submittedTime: "09:41",
-    expectedAmountCentavos: 149900,
+    expectedAmountCentavos: 49900,
   });
   if (
     classification.status !== "manual_review" ||

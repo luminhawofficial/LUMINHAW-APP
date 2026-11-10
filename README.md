@@ -1,43 +1,260 @@
-# Luminhaw
+# LUMINHAW
 
-Luminhaw is a Flutter plant-care app organized by feature. It includes the
-introduction/onboarding flow, five-destination app shell, local garden and
-growth journal, camera/gallery image selection, Supabase authentication, and
-server-side plant-analysis adapters.
+LUMINHAW is a Flutter plant-care app for identifying plants, learning about
+their biology and care, maintaining a garden journal, and tracking growth.
+Flutter provides the mobile and desktop UI; Supabase provides authentication,
+owner-scoped storage, and server-side provider integrations.
 
-Garden plants and journal entries are stored on the device for signed-out use
-and sync to owner-scoped Supabase tables for signed-in users with verified
-email. Existing device-only records are not automatically uploaded or assigned
-to an account. The app uses a public Supabase project URL and publishable key.
-Plant identification, health analysis, AI chat, and Google Play billing require
-provider configuration; the app reports when a service is unavailable rather
-than showing fabricated results or granting Premium. The plant catalog
-displays provider results only; there are no bundled sample plant records. See the
-[implementation checklist](docs/implementation-checklist.md) for known release
-blockers.
+> **Current state:** Live plant results require configured and deployed
+> Supabase Edge Functions. Provider keys belong in Supabase secrets, never in
+> the Flutter app or source control. Review the
+> [implementation checklist](docs/implementation-checklist.md) for deployment
+> and release requirements.
 
-## Project structure
+## UML use-case diagram
 
-- `lib/app/` — application setup, routing, and theme
-- `lib/core/` — shared constants, widgets, services, and errors
-- `lib/features/` — feature-specific screens and presentation widgets
-- `lib/features/information/` — About and privacy disclosures
-- `lib/models/` and `lib/repositories/` — shared data and repository layers
-- `assets/` — app images, icons, and fonts
-- `supabase/` — migration and edge-function locations
-- `test/` and `integration_test/` — automated tests
+The diagram describes the app's user-facing features and the external services
+they depend on. A dashed `include` relation means the use case invokes a shared
+or required step; a dashed `extend` relation represents an optional
+conditional flow.
 
-## App setup
+```plantuml
+@startuml
+left to right direction
+skinparam packageStyle rectangle
 
-Run the app locally:
+actor "App user" as AppUser
+actor Visitor
+actor "Signed-in user" as User
+actor "Verified account" as Verified
+actor "Premium account" as Premium
+actor "Payment reviewer" as Reviewer
+actor "Supabase Auth" as Auth
+actor "Supabase database\nand storage" as Database
+actor "Plant.ID" as PlantID
+actor "Pl@ntNet" as PlantNet
+actor Perenual
+actor Trefle
+actor GBIF
+actor "Gemini AI" as Gemini
+actor "OCR.space" as OCR
+actor Resend
+
+rectangle "LUMINHAW plant-care app" {
+  usecase "Complete introduction\nand onboarding" as Onboard
+  usecase "Create account / sign in" as SignIn
+  usecase "Verify email /\nreset password" as Verify
+  usecase "Browse dashboard\nand app tabs" as Dashboard
+  usecase "Identify plant\nfrom a photo" as Identify
+  usecase "Review scan result,\nbiology and care details" as ScanResult
+  usecase "Browse searchable\nplant library" as Library
+  usecase "View plant details\nand source metadata" as PlantDetails
+  usecase "Manage My Garden" as Garden
+  usecase "Add / remove a plant" as ManagePlants
+  usecase "Log care activities" as CareLog
+  usecase "Track growth and\nadd observations" as Growth
+  usecase "View detailed\nspecies care guide" as CareGuide
+  usecase "Check plant health\nwith an image" as Health
+  usecase "Chat with LUMIN AI" as AIChat
+  usecase "Manage profile\nand profile photo" as Profile
+  usecase "Manage settings,\nreminders and saved details" as Settings
+  usecase "View privacy,\nterms and app information" as Privacy
+  usecase "View plans and\npayment status" as Plans
+  usecase "Submit manual\npayment and receipt" as Pay
+  usecase "Review payment\nand approve / reject" as Review
+  usecase "Activate entitlement\nafter approval" as Activate
+  usecase "Store scan history,\ngarden and account data" as StoreData
+  usecase "Check verified\nPremium entitlement" as Entitlement
+}
+
+Visitor --|> AppUser
+User --|> AppUser
+Verified --|> User
+Premium --|> Verified
+
+Visitor --> Onboard
+Visitor --> SignIn
+Visitor --> Dashboard
+Visitor --> Identify
+Visitor --> Library
+Visitor --> Garden
+Visitor --> Growth
+Visitor --> Privacy
+
+User --> Dashboard
+User --> Identify
+User --> ScanResult
+User --> Library
+User --> PlantDetails
+User --> Garden
+User --> Growth
+User --> Profile
+User --> Settings
+User --> Plans
+User --> Pay
+User --> AIChat
+User --> Privacy
+
+Verified --> CareLog
+Verified --> CareGuide
+Verified --> AIChat
+Verified --> Health
+Verified --> StoreData
+Premium --> CareGuide
+Premium --> Health
+Premium --> AIChat
+Premium --> Growth
+Reviewer --> Review
+
+Verify ..> SignIn : <<extend>>
+Identify ..> ScanResult : <<include>>
+Identify ..> StoreData : <<include>>
+Library ..> PlantDetails : <<extend>>
+Garden ..> ManagePlants : <<include>>
+Garden ..> CareLog : <<include>>
+Growth ..> StoreData : <<include>>
+Growth ..> Entitlement : <<include>>
+CareGuide ..> Entitlement : <<include>>
+Health ..> Entitlement : <<include>>
+Health ..> StoreData : <<include>>
+AIChat ..> Entitlement : <<include>>
+Profile ..> StoreData : <<include>>
+Settings ..> StoreData : <<include>>
+Pay ..> Plans : <<include>>
+Activate ..> Review : <<extend>>
+
+SignIn --> Auth
+Verify --> Auth
+StoreData --> Database
+Identify --> PlantID
+Identify ..> PlantNet : <<fallback>>
+ScanResult --> Gemini : missing-field enrichment
+Library --> Perenual : first configured provider
+Library ..> Trefle : fallback
+Library ..> GBIF : final catalog fallback
+PlantDetails --> GBIF : localized names
+PlantDetails ..> Perenual : care / growth data
+PlantDetails ..> Trefle : exact-match taxonomy
+CareGuide --> Perenual
+Health --> PlantID
+AIChat --> Gemini
+Pay --> OCR
+Pay --> Resend : payment email
+Review --> Resend : approval email
+Review --> Database
+Activate --> Database
+@enduml
+```
+
+### Actors and access notes
+
+- **Visitor:** Can use the public app entry flow, dashboard, scanner, library,
+  garden, and privacy pages. Account-dependent cloud features prompt for sign-in.
+- **Signed-in user:** Can manage an account, browse features, and use
+  account-scoped data.
+- **Verified account:** Required by server endpoints for cloud garden sync,
+  plant care, health assessment, AI chat, and other protected operations.
+- **Premium account:** Server-verified subscription is required for Premium
+  features and protected operations in every build, including debug. Testing
+  Premium access requires an active verified entitlement.
+- **Payment reviewer:** Reviews manually submitted receipts. Approval and plan
+  activation are server-controlled; manual checkout remains disabled until its
+  merchant and production configuration are approved.
+
+## Feature guide
+
+| Feature | What it does | Main implementation |
+| --- | --- | --- |
+| Introduction and onboarding | Introduces the app and saves the local onboarding-complete preference. | `lib/features/onboarding/onboarding_flow.dart` |
+| Authentication | Supports sign-in, sign-up, email verification, password reset and update, logout, and account deletion. | `lib/features/authentication/auth_screens.dart`, `lib/core/services/supabase_backend.dart` |
+| Dashboard and navigation | Five tabs: Home, Library, Scan, Garden, and Profile. Home offers plant-care content and shortcuts; the Lumin AI launcher appears on the dashboard and feature pages, not onboarding or authentication pages. | `lib/features/home/presentation/app_shell.dart`, `lib/features/ai_assistant/lumin_assistant_overlay.dart` |
+| Plant identification | Captures or selects a plant photo after consent and sends it to the server for identification. Plant.ID is tried first; Pl@ntNet is the fallback when configured. | `lib/features/scanner/scanner_page.dart`, `lib/core/services/plant_identification_service.dart`, `supabase/functions/plant-identification/index.ts` |
+| Scan results, Biology and Nutrients | Free scan results show common/scientific names, family, genus/species when available, description, local names, and basic care. Advanced Biology and Nutrients sections are Premium-gated in the app; the `plant-enrich` endpoint also returns only Free-allowed sourced fields to non-Premium accounts and excludes generated AI content. | `lib/features/scan_results/scan_result_page.dart`, `lib/core/services/plant_enrichment_service.dart`, `supabase/functions/plant-enrich/index.ts` |
+| Plant library | Free users search the live catalog and view basic information; advanced species biology and extended care details are Premium-gated. Configured search providers are Perenual, Trefle, then GBIF. Eligible GBIF photos include attribution/license/source metadata. | `lib/features/library/library_page.dart`, `lib/core/services/plant_catalog_service.dart`, `supabase/functions/plant-catalog/index.ts` |
+| Plant details and saved details | Opens plant details and lets users save them. Free details include names, family/genus/species, basic description and basic care; advanced information requires Premium. | `lib/features/library/library_page.dart`, `lib/core/services/saved_plant_details_store.dart`, `lib/features/settings/saved_plant_details_page.dart` |
+| My Garden | Adds and removes tracked plants. Signed-out data stays on-device; verified signed-in data uses owner-scoped Supabase records. Existing device-only data is not automatically transferred to an account. | `lib/features/garden/garden_page.dart`, `lib/features/garden/add_garden_plant_page.dart`, `lib/core/services/local_plant_data_store.dart` |
+| Care activities and growth tracker | Premium feature. Records watering, fertilizing, pruning, repotting, growth observations, and optional measurements/photos. Its care plan provides rules-based guidance; opt-in local notifications deliver daily watering and stage-based fertilizer reminders at 9:00 AM. | `lib/features/growth_tracker/growth_tracker_page.dart`, `lib/core/services/local_plant_data_store.dart`, `lib/core/services/plant_notification_service.dart` |
+| Detailed care guide | Loads provider-supplied species care data from an exact Perenual species match; missing provider fields are omitted. The feature is Premium-gated in production. | `lib/features/care_guide/care_guide_page.dart`, `lib/core/services/plant_care_service.dart`, `supabase/functions/plant-care/index.ts` |
+| Plant health checker | With explicit consent, uploads a photo to private account storage and requests a Plant.ID health assessment. Results are suggestions, not a medical or botanical diagnosis. The server requires verified account and Premium entitlement in production. | `lib/features/health_checker/health_checker_page.dart`, `lib/core/services/plant_health_service.dart`, `supabase/functions/plant-health/index.ts` |
+| LUMIN AI | Premium text assistant for plant-care questions. The UI and Gemini-backed server function require a verified Premium entitlement; requests are rate-limited to protect the provider. Chat does not accept images. | `lib/features/ai_assistant/assistant_page.dart`, `lib/core/services/gemini_assistant_service.dart`, `supabase/functions/assistant-chat/index.ts` |
+| Notifications and settings | Opt-in local notifications remind users about due watering and stage-based fertilizer checks. The notification center also displays published app updates, maintenance notices, feature announcements, and general account notices from the `system_announcements` table. Announcements are public app-wide content; do not put private account data in this table. | `lib/features/settings/settings_page.dart`, `lib/core/services/plant_notification_service.dart`, `supabase/migrations/20261110100000_system_announcements.sql` |
+| Profile and settings | Updates display name and profile photo; opens subscription, scan history, saved plant details, health, growth, notification, privacy, and account settings. Care-reminder preferences are stored locally. | `lib/features/profile/profile_page.dart`, `lib/features/profile/edit_profile_page.dart`, `lib/features/settings/settings_page.dart` |
+| Scan history | Lists account-owned scan records and their results; sign-in is required for account history. | `lib/features/scanner/scan_history_page.dart`, `lib/core/services/scan_history_service.dart` |
+| Subscription and payment | Displays plans and entitlement status. Manual payment/receipt review has server workflows, but checkout is disabled pending approved merchant configuration. Google Play Billing is not implemented. | `lib/features/subscription/`, `lib/core/services/plan_entitlement_store.dart`, `lib/core/services/premium_payment_service.dart`, `docs/premium-payments.md` |
+| Privacy and About | In-app description of the app, data handling, external providers, subscriptions, and usage. Production release still needs a reviewed, publicly hosted privacy policy. | `lib/features/information/information_pages.dart` |
+
+## Project map
+
+```text
+lib/
+  app/                       Material app, router, theme
+  core/
+    constants/               Shared colors and constants
+    models/                  Plant and domain models
+    services/                Auth, storage, catalog and provider clients
+    widgets/                 Shared headers, cards, buttons, gates and UI
+  features/
+    ai_assistant/            LUMIN AI chat and launcher
+    authentication/          Sign-in, sign-up and recovery
+    care_guide/              Species care information
+    garden/                  My Garden and plant creation
+    growth_tracker/          Growth observations and care logs
+    health_checker/          Photo-based health assessment
+    home/                    Dashboard and five-tab app shell
+    information/             About, privacy and terms
+    library/                 Plant search and details
+    onboarding/              Entry, introduction and onboarding
+    profile/                 Profile and profile editor
+    scan_results/            Identification and botanical details
+    scanner/                 Photo identification and history
+    settings/                Settings and saved details
+    subscription/            Premium and manual payment screens
+supabase/
+  functions/                 Authenticated Edge Functions and shared code
+  migrations/                Database, storage and row-level security
+test/                        Flutter unit and widget tests
+integration_test/            Device integration tests
+assets/                      Plant artwork, icons and fonts
+docs/                        Implementation and release documentation
+```
+
+## Provider and data flow
+
+The Flutter app calls authenticated Supabase Edge Functions; provider secrets
+stay server-side. The primary app integrations are:
+
+| Provider | Use in LUMINHAW | Supabase secret |
+| --- | --- | --- |
+| Plant.ID | Photo identification and health assessment. | `PLANT_ID_API_KEY` |
+| Pl@ntNet | Fallback photo identification if Plant.ID is unavailable. | `PLANTNET_API_KEY` |
+| Perenual | Plant catalog, detailed care, and enrichment fields when available. | `PERENUAL_API_KEY` |
+| Trefle | Catalog fallback and exact-match taxonomy enrichment (family/genus). | `TREFLE_API_KEY` |
+| GBIF | Catalog fallback, taxonomy matching, localized names, and license-filtered occurrence images. | Public API; no key configured by this app |
+| Gemini | LUMIN AI chat and generated fallback fields when configured by the enrichment function. | `GEMINI_API_KEY` |
+
+The catalog uses this configured fallback order: **Perenual → Trefle → GBIF**.
+Plant.ID is the first identification provider and Pl@ntNet is the fallback.
+Provider results can be absent, rate-limited, or unavailable; the app should
+show that state rather than present generated data as provider-verified.
+
+Supabase Auth handles account identity. Owner-scoped tables and row-level
+security protect account data. Signed-out garden and journal data remains
+device-local. Health photos use private storage and are submitted to external
+services only after user consent. Read the in-app privacy disclosure and
+provider terms before release.
+
+## Setup and local development
+
+Install Flutter, Android tooling for Android builds, the Supabase CLI, and
+Deno for Edge Function tests. Install Dart dependencies and run the app:
 
 ```powershell
+flutter pub get
 flutter run
 ```
 
-Supabase Auth uses the configured project by default. To run against a
-different project, provide its URL and public publishable key (or legacy anon
-key) at build/run time:
+For a different Supabase project, provide its public URL and publishable key at
+run/build time:
 
 ```powershell
 flutter run `
@@ -45,171 +262,68 @@ flutter run `
   --dart-define=SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_KEY
 ```
 
-The Supabase migrations create owner-scoped tables, row-level security
-policies, a private `plant-photos` bucket, per-user Edge Function rate limits,
-and server-managed subscription entitlements. Account deletion, plant
-identification, catalog search, plant-health analysis, and AI chat are Edge
-Functions. Apply the migrations and deploy the functions with the Supabase CLI:
+Link and migrate a Supabase project, then deploy the app-facing functions:
 
 ```powershell
 supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
-supabase functions deploy plant-identification
-supabase functions deploy plant-catalog
-supabase functions deploy plant-care
-supabase functions deploy plant-health
-supabase functions deploy assistant-chat
-supabase functions deploy create-premium-payment
-supabase functions deploy submit-premium-payment
-supabase functions deploy get-premium-payment-status
-supabase functions deploy admin-review-premium-payment
-supabase functions deploy delete-account
-supabase functions deploy plant-search
-supabase functions deploy plant-sync
-supabase functions deploy plant-details
-supabase functions deploy plant-identify
-supabase functions deploy plant-id-health
-supabase functions deploy plant-perenual
-supabase functions deploy plant-gemini
+supabase functions deploy plant-identification plant-catalog plant-enrich plant-care plant-health assistant-chat
 ```
 
-Keep all provider credentials in Supabase Edge Function secrets, never in the
-Flutter app or source control. Plant identification uses `PLANT_ID_API_KEY`
-and falls back to `PLANTNET_API_KEY` if Plant.ID is unavailable. The online
-plant catalog uses `PERENUAL_API_KEY` when configured and falls back to the
-public GBIF species search API. LUMIN AI uses `GEMINI_API_KEY` and optionally
-`GEMINI_MODEL` (defaults to `gemini-flash-latest`). Add newly rotated
-credentials privately with `supabase secrets set`; do not reuse keys pasted
-into chat or place them in Dart `--dart-define` values. The Edge Functions also
-require `SUPABASE_SERVICE_ROLE_KEY` to enforce rate limits and check
-server-managed entitlements. Configure Supabase Auth email delivery and
-redirect URLs before testing verification and password reset. The scanner is
-wired to the plant-identification function; catalog searches use the
-authenticated plant-catalog function. The assistant calls the Gemini-backed
-function; free accounts can send 10 messages per UTC day, while accounts with
-an active, server-verified Premium entitlement have no daily message quota. The
-health checker accepts a camera or gallery photo only after
-the user consents, stores it in the private per-user photo bucket, and invokes
-the authenticated `plant-health` function. That function requires a verified
-Premium entitlement and enforces a rate limit; configure `PLANT_ID_API_KEY` as
-a Supabase Edge Function secret. Health results are advisory, not confirmed
-diagnoses, and live requests require deployed functions/migrations and
-provider configuration.
-
-The optional GBIF database API stores shared taxonomy in `plant_catalog`.
-This is deliberately separate from `plants`, which stores each user's garden,
-and identification history continues to use `plant_identifications.owner_id`.
-The auxiliary `plant-search`, `plant-sync`, `plant-details`, `plant-identify`,
-`plant-id-health`, `plant-perenual`, and `plant-gemini` functions use that
-catalog schema and verified-user rate limits. `plant-id-health` also checks the
-server-verified Premium entitlement. They are separate from the app's
-`plant-catalog`, `plant-identification`, and `plant-health` functions.
-
-Do not deploy a package's alternate `plant-care` function over this project's
-existing `plant-care` endpoint: the app endpoint provides Premium-gated
-Perenual care data and has a different request/response contract. The database
-API can return reviewed local care data through `plant-details`.
-
-Detailed plant care is Premium-gated in the app and on the server. The
-`plant-care` function finds an exact scientific-name match in Perenual's
-species database, returns only care fields the provider supplies, and caches
-matches for 24 hours per warm function instance. It requires the existing
-server-side `PERENUAL_API_KEY`; unsupported details such as temperature or
-humidity are omitted rather than inferred.
-
-GBIF catalog photos are looked up from occurrence media using the GBIF
-backbone taxon key. Only HTTPS photos marked CC0 or CC BY are used from GBIF;
-the plant detail page shows available creator, license, and source reference.
-The Edge Function caches occurrence images in each warm instance for six
-hours (empty or failed lookups for two minutes) and limits each search to six
-occurrence lookups. This cache is instance-local and is not shared across
-function cold starts. If no suitable photo is available or a request fails,
-the catalog keeps its image placeholder.
-
-After rotating exposed provider keys, create `supabase/.env.local` on your
-machine using the variable names above and the new values, then run:
+Configure API keys as Supabase Edge Function secrets (never as Flutter
+`--dart-define` values). A safer setup is to place them in an ignored,
+machine-local environment file, then load it with the Supabase CLI:
 
 ```powershell
 supabase secrets set --env-file supabase/.env.local
 ```
 
-That local env file is excluded from source control. Never paste replacement
-credentials into source files, command history, or chat.
+Use your secrets manager to populate the local file; never commit it, paste
+key values into chat, or save them in command history.
+Configure Supabase Auth email delivery and allowed redirect URLs before
+testing verification and password recovery. Additional account, payment, and
+auxiliary catalog functions are in `supabase/functions/`; deploy them only
+when their matching migration, configuration, and feature are required. Do
+not deploy the separate auxiliary `plant-perenual` function over the app's
+`plant-care` endpoint; their contracts differ.
 
-Premium remains locked until a trusted server verifies a configured manual
-payment or a future billing integration and writes a valid record to
-`subscription_entitlements`. No client-side action can grant the entitlement.
-Account deletion requires password reauthentication and a server-verified JWT
-with a recent authentication time; the deletion function removes the user's
-private photos before deleting the account.
-The Android application ID is `com.luminhaw.plantcare`; confirm its
-availability in the Play Console before publishing.
+For local Edge Function development, create a private local environment file
+from the placeholders in
+[`supabase/functions/.env.example`](supabase/functions/.env.example). Keep
+local secrets out of Git.
 
-Manual Premium payments are implemented but disabled until GCash approves the
-merchant receiving method and the server is configured. The currently
-configured plan prices are PHP 49 for 30 days and PHP 1,499 for 365 days;
-confirm the merchant terms and obtain owner approval before activation. See
-[manual Premium payment setup](docs/premium-payments.md) for the production
-readiness checklist, migration, function deployment, and configuration
-requirements. No GCash API or live webhook is implemented.
+## Tests and checks
 
-### Local payment-provider tests
-
-The payment Edge Functions use `OCR_SPACE_API_KEY` for OCR.space and
-`RESEND_API_KEY` plus `RESEND_FROM_EMAIL` for Resend (`PREMIUM_EMAIL_FROM`
-remains supported). GCash requires `GCASH_MERCHANT_NAME`,
-`GCASH_MERCHANT_ACCOUNT`, `GCASH_PAYMENT_INSTRUCTIONS`, and an explicit
-`GCASH_PAYMENTS_ENABLED=true`; do not enable it until the merchant and the
-receipt-validation flow are approved. Supabase supplies its URL and local
-service-role key to locally served functions. The placeholders in
-[supabase/functions/.env.example](supabase/functions/.env.example) are for
-local setup only. Add provider or approved merchant values to
-`supabase/functions/.env` without replacing existing secrets; that file is
-ignored by Git. Use a Resend-verified sender address when testing delivery.
-
-Run the mocked provider tests from the project root:
+Run Flutter analysis and tests:
 
 ```powershell
-deno test supabase/functions/_shared/receipt-ocr_test.ts supabase/functions/_shared/payment-email_test.ts
+flutter analyze
+flutter test
 ```
 
-These tests replace both provider HTTP calls with mocks and do not use API
-quotas. Supabase CLI loads `supabase/functions/.env` when serving functions
-locally; run `supabase functions serve --env-file supabase/functions/.env`.
-Keep `GCASH_PAYMENTS_ENABLED=false` to leave checkout disabled. Do not deploy
-functions or apply production migrations as part of local testing.
-
-## Android release signing
-
-Install the Android NDK version required by the current Flutter SDK through
-Android Studio's SDK Manager. Create an upload keystore, copy
-`android/key.properties.example` to the ignored `android/key.properties`, and
-fill in the real values locally. Never commit or share the keystore or
-`key.properties`.
+Run the Trefle and plant-enrichment Edge Function tests:
 
 ```powershell
-keytool -genkey -v -keystore android/upload-keystore.jks `
-  -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+deno test supabase/functions/_shared/trefle_test.ts supabase/functions/_shared/plant-enrichment_test.ts
+```
+
+Provider tests should mock HTTP calls unless you are intentionally performing
+a live, authenticated, non-production integration check. Do not spend
+production API quota in automated tests.
+
+## Android release
+
+The Android application ID is `com.luminhaw.plantcare`. Before producing a
+signed release, create a protected upload keystore and local
+`android/key.properties` from `android/key.properties.example`. Never commit
+the keystore or signing properties. Then build:
+
+```powershell
 flutter build appbundle --release
 ```
 
-The Android release task intentionally fails until valid release signing
-properties and the referenced keystore are present. Publish a reviewed,
-publicly hosted privacy policy and confirm the application ID in Play Console
-before submitting a release.
-
-## Run and test
-
-```powershell
-flutter pub get
-flutter analyze
-flutter test
-flutter run
-```
-#   L U M I N H A W - A P P  
- #   L U M I N H A W - A P P  
- #   L U M I N H A W - A P P  
- #   L U M I N H A W - A P P  
- #   L U M I N H A W - A P P  
- #   L U M I N H A W - A P P  
- 
+Google Play publication also requires a reviewed public privacy policy,
+publisher contact details, data-safety review, and completion of the
+production items in the
+[implementation checklist](docs/implementation-checklist.md). Google Play
+Billing is not currently implemented.

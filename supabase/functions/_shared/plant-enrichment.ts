@@ -59,7 +59,23 @@ export const PLANT_DETAIL_FIELD_GUIDANCE = {
   growingConditions: "Conditions that support healthy growth.",
 } as const;
 
-export const PLANT_ENRICHMENT_CACHE_VERSION = 4;
+export const PLANT_ENRICHMENT_CACHE_VERSION = 6;
+
+export const FREE_PLANT_ENRICHMENT_FIELDS = [
+  "commonName",
+  "scientificName",
+  "family",
+  "genus",
+  "species",
+  "tagalogName",
+  "bisayaName",
+  "description",
+  "dailyCare",
+  "careInstructions",
+  "wateringFrequency",
+  "wateringAmount",
+  "sunlightRequirements",
+] as const;
 
 export function normalizePlantName(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
@@ -94,13 +110,72 @@ export function isCurrentPlantEnrichmentCache(value: unknown): boolean {
     value.schemaVersion === PLANT_ENRICHMENT_CACHE_VERSION;
 }
 
+export function plantEnrichmentForPlan(
+  value: unknown,
+  isPremium: boolean,
+): unknown {
+  if (isPremium) return value;
+  const response = value !== null && typeof value === "object" &&
+      !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  if (!response) return value;
+
+  const allowedFields = new Set<string>(FREE_PLANT_ENRICHMENT_FIELDS);
+  const profile = response.profile !== null &&
+      typeof response.profile === "object" &&
+      !Array.isArray(response.profile)
+    ? response.profile as Record<string, unknown>
+    : {};
+  const aiGeneratedFields = new Set(
+    Array.isArray(response.aiGeneratedFields)
+      ? response.aiGeneratedFields.filter(
+        (field): field is string => typeof field === "string",
+      )
+      : [],
+  );
+  const freeProfile = Object.fromEntries(
+    Object.entries(profile).filter(([field, detail]) =>
+      allowedFields.has(field) && !aiGeneratedFields.has(field) &&
+      typeof detail === "string"
+    ),
+  );
+  const visibleFields = new Set(Object.keys(freeProfile));
+  const visibleMap = (value: unknown) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(value).filter(([field]) => visibleFields.has(field)),
+    );
+  };
+
+  return {
+    ...response,
+    profile: freeProfile,
+    fieldSources: visibleMap(response.fieldSources),
+    fieldStatuses: visibleMap(response.fieldStatuses),
+    aiGeneratedFields: [],
+    fieldGeneratedAt: {},
+    generatedAt: null,
+    unavailableFields: Array.isArray(response.unavailableFields)
+      ? response.unavailableFields.filter(
+        (field): field is string =>
+          typeof field === "string" && allowedFields.has(field),
+      )
+      : [],
+  };
+}
+
 export function plantFieldVerificationStatus(
   source: string | undefined,
   aiGenerated: boolean,
 ): "API Verified" | "AI-Generated" | "Needs Verification" | "Unavailable" {
   if (aiGenerated) return "AI-Generated";
   if (!source) return "Unavailable";
-  if (/\b(gbif|perenual|kew|plants of the world online)\b/i.test(source)) {
+  if (
+    /\b(gbif|perenual|trefle|kew|plants of the world online)\b/i.test(source)
+  ) {
     return "API Verified";
   }
   return "Needs Verification";

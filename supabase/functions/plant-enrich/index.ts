@@ -11,9 +11,12 @@ import {
   normalizePlantName as normalizedName,
   PLANT_DETAIL_FIELD_GUIDANCE,
   PLANT_ENRICHMENT_CACHE_VERSION,
+  plantEnrichmentForPlan,
   plantFieldVerificationStatus,
 } from "../_shared/plant-enrichment.ts";
+import { requirePremiumEntitlement } from "../_shared/auth.ts";
 import { boundedText, providerJson } from "../_shared/providers.ts";
+import { findExactTreflePlant, searchTreflePlants } from "../_shared/trefle.ts";
 
 type StringMap = Record<string, string>;
 
@@ -93,7 +96,7 @@ async function perenualProfile(
       "maximum_temperature",
     ],
     growthCharacteristics: ["growth_rate", "dimension", "propagation"],
-    careInstructions: ["maintenance", "pruning", "fertilizer"],
+    careInstructions: ["maintenance", "pruning"],
   };
   for (const [field, keys] of Object.entries(mappings)) {
     const values = keys
@@ -121,6 +124,22 @@ async function perenualProfile(
     if (values.length) fields[field] = values.join("; ").slice(0, 600);
   }
   return Object.keys(fields).length ? { fields, source: "Perenual" } : null;
+}
+
+async function trefleProfile(
+  scientificName: string,
+): Promise<{ fields: StringMap; source: string } | null> {
+  const token = Deno.env.get("TREFLE_API_KEY");
+  if (!token) return null;
+
+  const plants = await searchTreflePlants(scientificName, token);
+  const match = findExactTreflePlant(plants, scientificName);
+  if (!match) return null;
+
+  const fields: StringMap = {};
+  if (match.family) fields.family = match.family;
+  if (match.genus) fields.genus = match.genus;
+  return Object.keys(fields).length ? { fields, source: "Trefle" } : null;
 }
 
 async function gbifLocalNames(
@@ -253,6 +272,19 @@ async function handle(request: Request): Promise<Response> {
   if (auth instanceof Response) return auth;
   const limited = await enforceRequestLimit(auth.uid, "plant-enrich", 10);
   if (limited) return limited;
+  const entitlementResponse = await requirePremiumEntitlement(auth.uid);
+  let isPremium = true;
+  if (entitlementResponse) {
+    const payload = await entitlementResponse.clone().json().catch(() => null);
+    if (
+      entitlementResponse.status === 403 &&
+      payload?.error?.code === "premium_entitlement_required"
+    ) {
+      isPremium = false;
+    } else {
+      return entitlementResponse;
+    }
+  }
 
   const body = object(await request.json().catch(() => null));
   const rawScientificName = body?.scientificName;
@@ -265,12 +297,13 @@ async function handle(request: Request): Promise<Response> {
     return reply({ error: { code: "valid_scientific_name_required" } }, 400);
   }
   const key = normalizedName(scientificName);
+  const cacheKey = `${key}:${isPremium ? "premium" : "free"}`;
   const now = new Date();
   const cached = await auth.admin
     .from("plant_provider_cache")
     .select("response, expires_at")
     .eq("provider", "plant_enrichment")
-    .eq("lookup_key", key)
+    .eq("lookup_key", cacheKey)
     .maybeSingle();
   if (cached.error) {
     console.error("Plant enrichment cache read failed:", cached.error.code);
@@ -281,7 +314,7 @@ async function handle(request: Request): Promise<Response> {
     new Date(cached.data.expires_at).getTime() > now.getTime() &&
     isCurrentPlantEnrichmentCache(cached.data.response)
   ) {
-    return reply(cached.data.response);
+    return reply(plantEnrichmentForPlan(cached.data.response, isPremium));
   }
 
   const profile: StringMap = {};
@@ -291,20 +324,22 @@ async function handle(request: Request): Promise<Response> {
   const sourceFor = (field: string) =>
     text(inputSources[field], 80) ?? text(body?.source, 80) ??
       "Plant catalog";
-  for (const field of [
-    "commonName",
-    "scientificName",
-    "family",
-    "genus",
-    "species",
-    "kingdom",
-    "phylum",
-    "taxonomicClass",
-    "order",
-    "tagalogName",
-    "bisayaName",
-    "description",
-  ]) {
+  for (
+    const field of [
+      "commonName",
+      "scientificName",
+      "family",
+      "genus",
+      "species",
+      "kingdom",
+      "phylum",
+      "taxonomicClass",
+      "order",
+      "tagalogName",
+      "bisayaName",
+      "description",
+    ]
+  ) {
     const value = text(body?.[field], field.endsWith("Name") ? 120 : 600);
     if (!value) continue;
     profile[field] = value;
@@ -316,25 +351,33 @@ async function handle(request: Request): Promise<Response> {
   let generated = new Set<string>();
   let unavailableFields: string[] = [];
   const generatedAt = now.toISOString();
-  const [perenual, localNames] = await Promise.all([
+  const [perenual, trefle, localNames] = await Promise.all([
     perenualProfile(scientificName).catch((error) => {
       console.error(
         "Perenual enrichment failed:",
-        error instanceof Error ? error.message : "unknown error",
+        error instanceof Error ? error.name : "unknown error",
+      );
+      return null;
+    }),
+    trefleProfile(scientificName).catch((error) => {
+      console.error(
+        "Trefle enrichment failed:",
+        error instanceof Error ? error.name : "unknown error",
       );
       return null;
     }),
     gbifLocalNames(scientificName),
   ]);
-  if (perenual) {
-    for (const [field, value] of Object.entries(perenual.fields)) {
+  for (const provider of [perenual, trefle]) {
+    if (!provider) continue;
+    for (const [field, value] of Object.entries(provider.fields)) {
       const currentStatus = plantFieldVerificationStatus(
         fieldSources[field],
         generated.has(field),
       );
       if (!profile[field] || currentStatus !== "API Verified") {
         profile[field] = value;
-        fieldSources[field] = perenual.source;
+        fieldSources[field] = provider.source;
       }
       knownFields[field] = profile[field];
     }
@@ -356,30 +399,32 @@ async function handle(request: Request): Promise<Response> {
   const missing = Object.keys(PLANT_DETAIL_FIELD_GUIDANCE).filter(
     (field) => !profile[field],
   );
-  try {
-    if (missing.length && !Deno.env.get("GEMINI_API_KEY")) {
-      throw new Error("gemini_not_configured");
+  if (isPremium) {
+    try {
+      if (missing.length && !Deno.env.get("GEMINI_API_KEY")) {
+        throw new Error("gemini_not_configured");
+      }
+      const aiFields = await geminiEnrichment(scientificName, knownFields, [
+        ...missing,
+      ]);
+      for (const [field, value] of Object.entries(aiFields)) {
+        profile[field] = value;
+        fieldSources[field] = "LUMIN AI (Gemini)";
+        generated.add(field);
+      }
+    } catch (error) {
+      enrichmentError = error instanceof Error &&
+          error.message === "gemini_not_configured"
+        ? "AI enrichment is not configured."
+        : "AI enrichment is temporarily unavailable.";
+      unavailableFields = [...missing];
+      console.error(
+        "Gemini plant enrichment failed:",
+        error instanceof Error ? error.message : "unknown error",
+      );
     }
-    const aiFields = await geminiEnrichment(scientificName, knownFields, [
-      ...missing,
-    ]);
-    for (const [field, value] of Object.entries(aiFields)) {
-      profile[field] = value;
-      fieldSources[field] = "LUMIN AI (Gemini)";
-      generated.add(field);
-    }
-  } catch (error) {
-    enrichmentError = error instanceof Error &&
-        error.message === "gemini_not_configured"
-      ? "AI enrichment is not configured."
-      : "AI enrichment is temporarily unavailable.";
-    unavailableFields = [...missing];
-    console.error(
-      "Gemini plant enrichment failed:",
-      error instanceof Error ? error.message : "unknown error",
-    );
   }
-  if (!enrichmentError) {
+  if (isPremium && !enrichmentError) {
     unavailableFields = missing.filter((field) => !profile[field]);
   }
 
@@ -396,7 +441,7 @@ async function handle(request: Request): Promise<Response> {
     if (generated.has(field)) fieldGeneratedAt[field] = generatedAt;
   }
 
-  const response = {
+  const response = plantEnrichmentForPlan({
     success: true,
     schemaVersion: PLANT_ENRICHMENT_CACHE_VERSION,
     scientificName,
@@ -408,7 +453,7 @@ async function handle(request: Request): Promise<Response> {
     generatedAt: generated.size ? generatedAt : null,
     unavailableFields,
     enrichmentError,
-  };
+  }, isPremium);
   const expiresAt = new Date(
     now.getTime() +
       (enrichmentError ? 0 : CACHE_DAYS * 86_400_000),
@@ -418,7 +463,7 @@ async function handle(request: Request): Promise<Response> {
     .upsert(
       {
         provider: "plant_enrichment",
-        lookup_key: key,
+        lookup_key: cacheKey,
         response,
         expires_at: expiresAt,
       },

@@ -1,7 +1,7 @@
 # Manual Premium payments
 
 LUMINHAW uses manual GCash payments; it does not call a GCash gateway API.
-Monthly Premium is PHP 49 for 30 days and yearly Premium is PHP 1,499 for 365
+Monthly Premium is PHP 49 for 30 days and yearly Premium is PHP 499 for 365
 days. Both plan rows remain disabled until the owner explicitly authorizes
 activation.
 
@@ -186,16 +186,20 @@ Complete and record each gate before requesting production activation:
 
 ## Current production setup
 
-- The last recorded production check found the configured prices and private QR
-  paths:
+- The last recorded production check found these price and QR settings:
   - `premium_30_days`: 4900 centavos, `plans/GCash-MyQR-49.PNG.jpg`
   - `premium_365_days`: 149900 centavos, `plans/GCash-MyQR-1499.PNG.jpg`
 - Both production plans were disabled at that check.
-- The private `gcash-payment-assets` bucket exists, but the QR objects were
-  absent at that check. The Storage CLI rejected upload operations. The source
-  images are staged locally in `supabase/private-assets/gcash/`, outside the
-  Flutter asset bundle. Upload them through Supabase Dashboard → Storage →
-  `gcash-payment-assets` at the exact paths above.
+- Migration
+  `20261110120000_update_yearly_premium_price.sql` updates the local yearly
+  plan to 49900 centavos and changes its QR path. This migration has not been
+  deployed; the production yearly price remains unverified until deployment.
+- The private `gcash-payment-assets` bucket exists, but QR objects were absent
+  at the last recorded check. The 365-day price has since changed from PHP 1,499
+  to PHP 499, so do not reuse the old 1,499 QR. Before enabling yearly checkout,
+  provide and verify a QR that accepts the PHP 499 payment, then upload it as
+  `plans/GCash-MyQR-499.PNG.jpg` through Supabase Dashboard → Storage →
+  `gcash-payment-assets`. The monthly QR is `plans/GCash-MyQR-49.PNG.jpg`.
 - The local migration
   `20261106230000_email_payment_approval_and_strict_receipts.sql` is not applied
   to production. It adds email-action tokens and hash-keyed rate limits, adds
@@ -254,8 +258,8 @@ supabase --experimental storage cp --content-type image/jpeg --remote=ccxzjjsxgg
   .\supabase\private-assets\gcash\GCash-MyQR-49.PNG.jpg `
   ss:///gcash-payment-assets/plans/GCash-MyQR-49.PNG.jpg
 supabase --experimental storage cp --content-type image/jpeg --remote=ccxzjjsxggrxiaaehxxu `
-  .\supabase\private-assets\gcash\GCash-MyQR-1499.PNG.jpg `
-  ss:///gcash-payment-assets/plans/GCash-MyQR-1499.PNG.jpg
+  .\supabase\private-assets\gcash\GCash-MyQR-499.PNG.jpg `
+  ss:///gcash-payment-assets/plans/GCash-MyQR-499.PNG.jpg
 
 # Only after owner-provided, verified Resend/OCR.space credentials and merchant
 # details are available in a protected local file (never commit that file):

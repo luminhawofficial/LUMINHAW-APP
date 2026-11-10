@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
 
 import 'app/app.dart';
 import 'core/services/plan_entitlement_store.dart';
+import 'core/services/plant_notification_service.dart';
 import 'core/services/supabase_backend.dart';
 
 export 'app/app.dart';
@@ -62,7 +63,29 @@ Future<void> main() async {
           ),
         );
       }
+      try {
+        await refreshEnabledCareReminders();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'care reminder scheduling',
+          ),
+        );
+      }
     });
   }
   runApp(const LuminhawApp());
+  try {
+    await refreshEnabledCareReminders();
+  } catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'care reminder scheduling',
+      ),
+    );
+  }
 }
