@@ -85,7 +85,7 @@ class PlanBadge extends StatelessWidget {
       builder: (context, tier, _) {
         final isPremium = tier == PlanTier.premium;
         return Tooltip(
-          message: isPremium ? 'Premium plan' : 'Free plan',
+          message: isPremium ? 'Premium plan' : 'Basic plan',
           child: InkWell(
             onTap: () => Navigator.pushNamed(context, '/premium'),
             customBorder: const CircleBorder(),

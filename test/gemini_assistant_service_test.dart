@@ -53,4 +53,13 @@ void main() {
       contains('Premium feature'),
     );
   });
+
+  test('explains the Basic plan daily AI message limit', () {
+    expect(
+      GeminiAssistantService.messageForErrorCode(
+        'assistant_daily_limit_reached',
+      ),
+      contains('10 LUMIN AI messages today'),
+    );
+  });
 }

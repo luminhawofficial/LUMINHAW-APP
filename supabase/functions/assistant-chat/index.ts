@@ -1,7 +1,7 @@
 import {
   authenticatedUserId,
   enforceRateLimit,
-  requirePremiumEntitlement,
+  hasPremiumEntitlement,
 } from "../_shared/auth.ts";
 
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
@@ -243,10 +243,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return userId;
   }
 
-  // 4. PREMIUM ENTITLEMENT
-  const entitlementResponse = await requirePremiumEntitlement(userId);
-
-  if (entitlementResponse) return entitlementResponse;
+  // 4. PLAN ENTITLEMENT
+  const premiumEntitlement = await hasPremiumEntitlement(userId);
+  if (premiumEntitlement instanceof Response) return premiumEntitlement;
 
   const rateLimitResponse = await enforceRateLimit(
     userId,
@@ -298,6 +297,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
       },
       503,
     );
+  }
+
+  if (!premiumEntitlement) {
+    const dailyLimitResponse = await enforceRateLimit(
+      userId,
+      "assistant-chat-basic-daily",
+      10,
+      86400,
+      "assistant_daily_limit_reached",
+    );
+    if (dailyLimitResponse) return dailyLimitResponse;
   }
 
   // 8. CONVERSATION HISTORY

@@ -7,24 +7,25 @@ import 'package:luminhaw/features/subscription/premium_payment_page.dart';
 class PremiumPage extends StatelessWidget {
   const PremiumPage({super.key});
 
-  static const _freeBenefits = [
-    'Plant identification (camera or upload)',
+  static const _basicBenefits = [
+    'Plant scanner (camera or upload)',
     'Common and scientific names',
     'Family, genus, and species',
     'Basic plant description and care instructions',
     'Tagalog and Cebuano/Bisaya names',
-    'Basic plant library information',
+    'Searchable plant library with basic information',
     'Recent scans and saved plants',
+    'LUMIN AI assistant (10 messages per day)',
   ];
 
   static const _premiumBenefits = [
-    'Everything in Free',
+    'Everything in Basic',
     'Advanced plant biology',
     'Detailed nutrient information',
     'AI plant health and disease screening',
     'Personalized care guides',
     'Growth and care tracker',
-    'AI plant assistant',
+    'Higher LUMIN AI usage limits',
     'Advanced AI plant information',
   ];
 
@@ -92,11 +93,11 @@ class PremiumPage extends StatelessWidget {
                             const SizedBox(height: 16),
                             _PlanCard(
                               logo: 'assets/images/Free_logo .png',
-                              name: 'FREE',
+                              name: 'BASIC',
                               price: '₱0',
                               description:
-                                  'Essential plant identification and learning',
-                              benefits: _freeBenefits,
+                                  'Essential plant tools for everyday use',
+                              benefits: _basicBenefits,
                               selected: !isPremium,
                             ),
                             const SizedBox(height: 14),

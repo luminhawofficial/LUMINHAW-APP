@@ -299,7 +299,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Discover the green around you.'), findsOneWidget);
     expect(find.byTooltip('Notifications'), findsNothing);
-    expect(find.byTooltip('Free plan'), findsNothing);
+    expect(find.byTooltip('Basic plan'), findsNothing);
     expect(find.byTooltip('Premium plan'), findsNothing);
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
@@ -455,6 +455,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Basic plan includes the scanner, library, and daily AI limit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: PremiumPage()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('BASIC'), findsOneWidget);
+    expect(find.text('Plant scanner (camera or upload)'), findsOneWidget);
+    expect(
+      find.text('Searchable plant library with basic information'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('LUMIN AI assistant (10 messages per day)'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('profile links open About and privacy disclosures', (
     tester,
   ) async {
@@ -492,8 +511,13 @@ void main() {
     await tester.tap(find.text('Subscription & payment'));
     await tester.pumpAndSettle();
 
-    expect(find.text('FREE'), findsOneWidget);
-    expect(find.text('PRO'), findsOneWidget);
+    expect(find.text('BASIC'), findsOneWidget);
+    expect(
+      find.text('LUMIN AI assistant (10 messages per day)'),
+      findsOneWidget,
+    );
+    expect(find.text('Plant scanner (camera or upload)'), findsOneWidget);
+    expect(find.text('PREMIUM'), findsOneWidget);
     expect(
       find.image(const AssetImage('assets/images/Free_logo .png')),
       findsWidgets,

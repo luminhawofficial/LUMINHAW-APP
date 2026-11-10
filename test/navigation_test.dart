@@ -42,7 +42,7 @@ void main() {
 
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Free plan'));
+    await tester.tap(find.byTooltip('Basic plan'));
     await tester.pumpAndSettle();
     expect(find.text('Unlock more with LUMINHAW Premium'), findsOneWidget);
   });
@@ -250,7 +250,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Open Lumin AI'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Free plan'));
+    await tester.tap(find.byTooltip('Basic plan'));
     await tester.pumpAndSettle();
     expect(find.text('Unlock more with LUMINHAW Premium'), findsOneWidget);
 

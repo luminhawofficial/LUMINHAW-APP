@@ -49,6 +49,7 @@ export async function enforceRateLimit(
   bucket: string,
   limit: number,
   windowSeconds: number,
+  limitCode = "rate_limit_exceeded",
 ): Promise<Response | null> {
   const supabase = serviceClient();
   if (!supabase) {
@@ -67,7 +68,7 @@ export async function enforceRateLimit(
   }
   if (data !== true) {
     return jsonResponse(
-      { error: { code: "rate_limit_exceeded" } },
+      { error: { code: limitCode } },
       429,
     );
   }
@@ -75,9 +76,9 @@ export async function enforceRateLimit(
   return null;
 }
 
-export async function requirePremiumEntitlement(
+export async function hasPremiumEntitlement(
   userId: string,
-): Promise<Response | null> {
+): Promise<boolean | Response> {
   const supabase = serviceClient();
   if (!supabase) {
     return jsonResponse({ error: { code: "function_not_configured" } }, 503);
@@ -99,7 +100,15 @@ export async function requirePremiumEntitlement(
       503,
     );
   }
-  if (!data) {
+  return data !== null;
+}
+
+export async function requirePremiumEntitlement(
+  userId: string,
+): Promise<Response | null> {
+  const entitlement = await hasPremiumEntitlement(userId);
+  if (entitlement instanceof Response) return entitlement;
+  if (!entitlement) {
     return jsonResponse(
       { error: { code: "premium_entitlement_required" } },
       403,

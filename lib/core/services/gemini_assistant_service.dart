@@ -150,6 +150,8 @@ class GeminiAssistantService {
     return switch (code) {
       'premium_entitlement_required' => 'LUMIN AI is a Premium feature. Subscribe to Premium to use the assistant.',
 
+      'assistant_daily_limit_reached' => 'You have reached the Basic plan limit of 10 LUMIN AI messages today. Try again tomorrow or upgrade to Premium.',
+
       'assistant_not_configured' =>
         'LUMIN AI is not configured on the server. '
             'Add GEMINI_API_KEY to Supabase Edge Function secrets.',
