@@ -46,19 +46,22 @@ class _GcashReferenceFormatter extends TextInputFormatter {
 }
 
 class PremiumPaymentPage extends StatefulWidget {
-  const PremiumPaymentPage({super.key});
+  const PremiumPaymentPage({super.key, this.paymentProvider});
+
+  final PremiumPaymentProvider? paymentProvider;
 
   @override
   State<PremiumPaymentPage> createState() => _PremiumPaymentPageState();
 }
 
 class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
-  final PremiumPaymentProvider _paymentProvider =
-      const ManualGcashPaymentProvider();
+  late final PremiumPaymentProvider _paymentProvider;
+  final _customerInformationFormKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   final _transactionReference = TextEditingController();
   final _fullName = TextEditingController();
   final _mobileNumber = TextEditingController();
+  final _verifiedMobileNumber = TextEditingController();
   PremiumPaymentOptions? _options;
   Map<String, dynamic>? _openRequest;
   XFile? _proof;
@@ -74,6 +77,8 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
   @override
   void initState() {
     super.initState();
+    _paymentProvider =
+        widget.paymentProvider ?? const ManualGcashPaymentProvider();
     _fullName.text = SupabaseAuthService.displayName ?? '';
     _load();
   }
@@ -83,6 +88,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
     _transactionReference.dispose();
     _fullName.dispose();
     _mobileNumber.dispose();
+    _verifiedMobileNumber.dispose();
     super.dispose();
   }
 
@@ -116,6 +122,8 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
                 'amount_centavos': existing.amountCentavos,
                 'currency': existing.currency,
                 'plan_code': existing.planCode,
+                'customer_full_name': existing.customerFullName,
+                'customer_mobile_number': existing.customerMobileNumber,
                 'payment_plans': {
                   'code': existing.planCode,
                   'name': existing.planName,
@@ -133,14 +141,8 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
   }
 
   Future<void> _createPayment(PremiumPaymentPlan plan) async {
+    if (_customerInformationFormKey.currentState?.validate() != true) return;
     final mobile = _mobileNumber.text.trim().replaceAll(RegExp(r'[\s()-]'), '');
-    if (_fullName.text.trim().length < 2 ||
-        !RegExp(r'^(09\d{9}|\+639\d{9}|639\d{9})$').hasMatch(mobile)) {
-      _showMessage(
-        'Enter your full name and a valid Philippine mobile number.',
-      );
-      return;
-    }
     setState(() => _isSubmitting = true);
     try {
       final result = await _paymentProvider.createPayment(
@@ -157,6 +159,8 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
         _openRequest = {
           ...Map<String, dynamic>.from(payment),
           'plan_code': plan.code,
+          'customer_full_name': _fullName.text.trim(),
+          'customer_mobile_number': mobile,
           'payment_plans': {'code': plan.code, 'name': plan.name},
         };
         _isSubmitting = false;
@@ -583,11 +587,17 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
             'You will receive the GCash payment instructions next. Premium activates only after your payment is verified.',
             style: TextStyle(color: AppColors.muted, fontSize: 11),
           ),
+          if (selectedPlan.qrImageUrl == null) ...[
+            const SizedBox(height: 10),
+            const SetupNotice(
+              message: 'The GCash QR code is unavailable for this plan. Do not send payment; please try again later.',
+            ),
+          ],
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _isSubmitting
+              onPressed: _isSubmitting || selectedPlan.qrImageUrl == null
                   ? null
                   : () => _createPayment(selectedPlan),
               icon: const Icon(Icons.north_east),
@@ -643,6 +653,51 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
             ),
           ),
           const SizedBox(height: 12),
+          if (request['customer_full_name'] is String ||
+              request['customer_mobile_number'] is String) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F8F3),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Customer information',
+                    style: TextStyle(
+                      color: AppColors.green,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (request['customer_full_name'] is String)
+                    Text('Name: ${request['customer_full_name']}'),
+                  if (request['customer_mobile_number'] is String)
+                    Text(
+                      'GCash mobile number: ${request['customer_mobile_number']}',
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (selectedPlan?.qrImageUrl != null) ...[
+            Center(
+              child: Image.network(
+                selectedPlan!.qrImageUrl!,
+                key: const ValueKey('gcash-payment-qr'),
+                width: 220,
+                height: 220,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const SetupNotice(
+                  message: 'The configured GCash QR image is unavailable. Do not send payment until it is restored.',
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
@@ -653,6 +708,14 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text(
+                  'Selected plan',
+                  style: TextStyle(
+                    color: AppColors.green,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Text(
                   planName ?? 'Premium plan',
                   style: const TextStyle(
@@ -660,7 +723,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   _money(
                     request['amount_centavos'] as int,
@@ -703,20 +766,6 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
           if (options.paymentSteps != null) ...[
             const SizedBox(height: 8),
             Text(options.paymentSteps!),
-          ],
-          if (selectedPlan?.qrImageUrl != null) ...[
-            const SizedBox(height: 12),
-            Center(
-              child: Image.network(
-                selectedPlan!.qrImageUrl!,
-                width: 220,
-                height: 220,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => const SetupNotice(
-                  message: 'The configured GCash QR image is unavailable. Do not send payment until it is restored.',
-                ),
-              ),
-            ),
           ],
           if (request['payment_status'] == 'pending') ...[
             const SizedBox(height: 10),
@@ -867,23 +916,66 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
           style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 8),
-        TextField(
-          controller: _fullName,
-          maxLength: 120,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Full name',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        TextField(
-          controller: _mobileNumber,
-          keyboardType: TextInputType.phone,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            labelText: 'GCash registered mobile number',
-            hintText: '09XXXXXXXXX',
-            border: OutlineInputBorder(),
+        Form(
+          key: _customerInformationFormKey,
+          child: Column(
+            children: [
+              TextFormField(
+                key: const ValueKey('payment-customer-name'),
+                controller: _fullName,
+                maxLength: 120,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Full name *',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) => (value?.trim().length ?? 0) < 2
+                    ? 'Enter your full name.'
+                    : null,
+              ),
+              TextFormField(
+                key: const ValueKey('payment-customer-mobile'),
+                controller: _mobileNumber,
+                keyboardType: TextInputType.phone,
+                maxLength: 20,
+                decoration: const InputDecoration(
+                  labelText: 'GCash registered mobile number *',
+                  hintText: '09XXXXXXXXX',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final mobile =
+                      value?.trim().replaceAll(RegExp(r'[\s()-]'), '') ?? '';
+                  return RegExp(r'^(09\d{9}|\+639\d{9}|639\d{9})$')
+                          .hasMatch(mobile)
+                      ? null
+                      : 'Enter a valid Philippine mobile number.';
+                },
+              ),
+              TextFormField(
+                key: const ValueKey('payment-verified-mobile'),
+                controller: _verifiedMobileNumber,
+                keyboardType: TextInputType.phone,
+                maxLength: 20,
+                decoration: const InputDecoration(
+                  labelText: 'Verify GCash mobile number *',
+                  hintText: 'Re-enter 09XXXXXXXXX',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final mobile =
+                      value?.trim().replaceAll(RegExp(r'[\s()-]'), '') ?? '';
+                  if (mobile.isEmpty) return 'Re-enter your GCash number.';
+                  final expected = _mobileNumber.text.trim().replaceAll(
+                    RegExp(r'[\s()-]'),
+                    '',
+                  );
+                  return mobile == expected
+                      ? null
+                      : 'The GCash mobile numbers do not match.';
+                },
+              ),
+            ],
           ),
         ),
         Text(
@@ -951,10 +1043,7 @@ class TemporaryPaymentReceiptDialog extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            if (message != null) ...[
-              const SizedBox(height: 8),
-              Text(message!),
-            ],
+            if (message != null) ...[const SizedBox(height: 8), Text(message!)],
             const Divider(height: 24),
             Text('Plan: $planName'),
             Text('Amount: $amount'),

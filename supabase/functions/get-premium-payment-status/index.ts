@@ -32,7 +32,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const paymentsPromise = client
     .from("premium_payment_requests")
     .select(
-      "id, plan_id, payment_method, amount_centavos, currency, unique_payment_reference, merchant_transaction_reference, payment_date, payment_status, review_notes, created_at, reviewed_at, entitlement_expires_at, payment_plans(code, name, duration_days)",
+      "id, plan_id, payment_method, amount_centavos, currency, unique_payment_reference, merchant_transaction_reference, payment_date, payment_status, customer_full_name, customer_mobile_number, review_notes, created_at, reviewed_at, entitlement_expires_at, payment_plans(code, name, duration_days)",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false })

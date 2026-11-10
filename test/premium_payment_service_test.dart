@@ -42,6 +42,8 @@ void main() {
           'amount_centavos': 4900,
           'currency': 'PHP',
           'created_at': '2026-10-30T00:00:00Z',
+          'customer_full_name': 'Sample Grower',
+          'customer_mobile_number': '+639123456789',
           'entitlement_expires_at': '2026-11-29T00:00:00Z',
           'payment_plans': {
             'code': 'premium_30_days',
@@ -65,6 +67,8 @@ void main() {
     expect(options.plans.first.amountCentavos, 4900);
     expect(options.payments.single.status, 'approved');
     expect(options.payments.single.planCode, 'premium_30_days');
+    expect(options.payments.single.customerFullName, 'Sample Grower');
+    expect(options.payments.single.customerMobileNumber, '+639123456789');
     expect(
       options.payments.single.entitlementExpiresAt,
       DateTime.parse('2026-11-29T00:00:00Z'),

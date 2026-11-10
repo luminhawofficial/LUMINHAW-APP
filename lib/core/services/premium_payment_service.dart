@@ -74,6 +74,8 @@ class PremiumPaymentRecord {
     required this.createdAt,
     this.planCode,
     this.transactionReference,
+    this.customerFullName,
+    this.customerMobileNumber,
     this.reviewNotes,
     this.entitlementExpiresAt,
   });
@@ -87,6 +89,8 @@ class PremiumPaymentRecord {
   final DateTime createdAt;
   final String? planCode;
   final String? transactionReference;
+  final String? customerFullName;
+  final String? customerMobileNumber;
   final String? reviewNotes;
   final DateTime? entitlementExpiresAt;
 
@@ -119,6 +123,8 @@ class PremiumPaymentRecord {
       createdAt: date,
       planCode: planCode is String ? planCode : null,
       transactionReference: json['merchant_transaction_reference'] as String?,
+      customerFullName: json['customer_full_name'] as String?,
+      customerMobileNumber: json['customer_mobile_number'] as String?,
       reviewNotes: json['review_notes'] as String?,
       entitlementExpiresAt: json['entitlement_expires_at'] is String
           ? DateTime.tryParse(json['entitlement_expires_at'] as String)
