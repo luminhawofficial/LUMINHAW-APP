@@ -218,12 +218,12 @@ class PlantCatalogService {
 
       final enrichedFields = <String, String>{
         ..._stringMap(item['enrichedFields']),
-        if (origin case final value?) 'originHabitat': value,
-        if (compatibleWeather != null) 'weatherClimate': compatibleWeather,
-        if (soil != null) 'soilCompatibility': soil,
-        if (sunlight != null) 'sunlightRequirements': sunlight,
-        if (careInstructions != null) 'careInstructions': careInstructions,
-        if (temperature case final value?) 'temperatureRange': value,
+        'originHabitat': origin?,
+        'weatherClimate': compatibleWeather?,
+        'soilCompatibility': soil?,
+        'sunlightRequirements': sunlight?,
+        'careInstructions': careInstructions?,
+        'temperatureRange': temperature?,
       };
       final plantSource = isVerified
           ? 'LUMINHAW verified catalog'

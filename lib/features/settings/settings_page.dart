@@ -291,7 +291,7 @@ class _PaymentNotices extends StatelessWidget {
           _PaymentNoticeCard(
             title: 'Premium subscription expiring soon',
             detail:
-                'Your verified Premium entitlement expires ${_announcementDate(expiration!)}. Renew before then to keep Premium access.',
+                'Your verified Premium entitlement expires ${_announcementDate(expiration)}. Renew before then to keep Premium access.',
             icon: Icons.event_busy_outlined,
           ),
         if (hasExpired && expiration != null)
