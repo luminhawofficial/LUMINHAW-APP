@@ -103,6 +103,9 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
       PlanEntitlementStore.instance.applyVerifiedServerSnapshot(
         userId: options.userId,
         expiresAt: options.premiumExpiresAt,
+        productId: options.premiumProductId,
+        status: options.premiumStatus,
+        startsAt: options.premiumStartsAt,
       );
       final pendingPayments = options.payments
           .where(
@@ -999,8 +1002,8 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
       '${value.minute.toString().padLeft(2, '0')}';
 
   static String _statusLabel(String status) => switch (status) {
-    'pending' || 'under_review' =>
-      'Your payment has been submitted and is waiting for verification.',
+    'pending' => 'Pending administrator review.',
+    'under_review' => 'Manual review is in progress.',
     'approved' => 'Your payment has been verified. Your Premium subscription is now active.',
     'rejected' => 'Your payment was not approved.',
     'cancelled' => 'Cancelled',

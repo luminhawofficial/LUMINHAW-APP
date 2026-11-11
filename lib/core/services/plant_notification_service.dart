@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plant_care_recommendations.dart';
+import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
@@ -15,6 +16,8 @@ class SystemAnnouncement {
     required this.body,
     required this.category,
     required this.publishedAt,
+    this.audience = 'all',
+    this.dismissible = true,
   });
 
   final String id;
@@ -22,6 +25,8 @@ class SystemAnnouncement {
   final String body;
   final String category;
   final DateTime publishedAt;
+  final String audience;
+  final bool dismissible;
 
   factory SystemAnnouncement.fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -42,6 +47,10 @@ class SystemAnnouncement {
       body: body,
       category: category,
       publishedAt: DateTime.parse(publishedAt),
+      audience: json['audience'] is String ? json['audience'] as String : 'all',
+      dismissible: json['dismissible'] is bool
+          ? json['dismissible'] as bool
+          : true,
     );
   }
 }
@@ -52,6 +61,7 @@ class PlantNotificationService {
   static final instance = PlantNotificationService._();
   static const careRemindersPreferenceKey = 'care_reminders_enabled';
   static const _reminderPayloadPrefix = 'care-reminder:';
+  static const _dismissedAnnouncementPrefix = 'dismissed_announcements_';
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -199,9 +209,17 @@ class PlantNotificationService {
       throw StateError(SupabaseBackend.configurationMessage);
     }
     final now = DateTime.now().toUtc().toIso8601String();
+    final userId = SupabaseAuthService.currentUser?.id ?? 'anonymous';
+    final preferences = await SharedPreferences.getInstance();
+    final dismissed =
+        preferences.getStringList('$_dismissedAnnouncementPrefix$userId') ??
+        const <String>[];
+    final isPremium = PlanEntitlementStore.instance.hasPremiumAccess;
     final rows = await SupabaseBackend.client
         .from('system_announcements')
-        .select('id, title, body, category, published_at')
+        .select(
+          'id, title, body, category, audience, dismissible, published_at',
+        )
         .eq('is_active', true)
         .lte('published_at', now)
         .or('expires_at.is.null,expires_at.gt.$now')
@@ -211,7 +229,30 @@ class PlantNotificationService {
         .map(
           (row) => SystemAnnouncement.fromJson(Map<String, dynamic>.from(row)),
         )
+        .where(
+          (announcement) =>
+              !dismissed.contains(announcement.id) &&
+              (announcement.audience == 'all' ||
+                  (announcement.audience == 'premium' && isPremium) ||
+                  (announcement.audience == 'free' && !isPremium)),
+        )
         .toList(growable: false);
+  }
+
+  Future<void> dismissAnnouncement(String announcementId) async {
+    if (announcementId.trim().isEmpty) {
+      throw ArgumentError.value(announcementId, 'announcementId');
+    }
+    final userId = SupabaseAuthService.currentUser?.id ?? 'anonymous';
+    final preferences = await SharedPreferences.getInstance();
+    final key = '$_dismissedAnnouncementPrefix$userId';
+    final dismissed = preferences.getStringList(key) ?? <String>[];
+    if (!dismissed.contains(announcementId)) {
+      dismissed.add(announcementId);
+      if (!await preferences.setStringList(key, dismissed)) {
+        throw StateError('The announcement dismissal could not be saved.');
+      }
+    }
   }
 
   static bool _isNotifiableReminder(CareRecommendation reminder) {

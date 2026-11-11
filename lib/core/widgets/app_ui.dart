@@ -25,51 +25,50 @@ class AppHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = dark ? Colors.white : AppColors.green;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      child: Row(
-        children: [
-          if (back)
-            IconButton(
-              onPressed: onBack ?? () => Navigator.maybePop(context),
-              icon: Icon(Icons.arrow_back, color: foreground),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            ),
-          Image.asset('assets/icons/logo.png', width: 24, height: 24),
-          const SizedBox(width: 7),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'LUMINHAW',
-                style: TextStyle(
-                  color: foreground,
-                  fontFamily: 'Cinzel',
-                  fontWeight: FontWeight.w700,
-                  fontVariations: const [FontVariation.weight(700)],
-                  fontSize: 16,
-                ),
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+        child: Row(
+          children: [
+            if (back)
+              IconButton(
+                onPressed: onBack ?? () => Navigator.maybePop(context),
+                icon: Icon(Icons.arrow_back, color: foreground),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+            Image.asset('assets/icons/logo.png', width: 24, height: 24),
+            const SizedBox(width: 7),
+            Text(
+              'LUMINHAW',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: foreground,
+                fontFamily: 'Cinzel',
+                fontWeight: FontWeight.w700,
+                fontVariations: const [FontVariation.weight(700)],
+                fontSize: 16,
               ),
             ),
-          ),
-          const Spacer(),
-          if (showNotifications)
-            IconButton(
-              tooltip: 'Notifications',
-              onPressed: () => Navigator.pushNamed(context, '/notifications'),
-              icon: Icon(Icons.notifications_none, color: foreground),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            ),
-          const SizedBox(width: 4),
-          trailing ?? const SizedBox.shrink(),
-          if (showPlan) ...[
-            if (trailing != null) const SizedBox(width: 8),
-            const PlanBadge(),
+            const Spacer(),
+            if (showNotifications)
+              IconButton(
+                tooltip: 'Notifications',
+                onPressed: () => Navigator.pushNamed(context, '/notifications'),
+                icon: Icon(Icons.notifications_none, color: foreground),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+            const SizedBox(width: 4),
+            trailing ?? const SizedBox.shrink(),
+            if (showPlan) ...[
+              if (trailing != null) const SizedBox(width: 8),
+              const PlanBadge(),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -239,7 +238,7 @@ class AppCard extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF5F7F4),
         borderRadius: BorderRadius.circular(20),
       ),
       child: child,
@@ -257,18 +256,34 @@ class SetupNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF2D8),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFEAF5ED),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, color: Color(0xFF8A5A00), size: 20),
+          Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCF2E2),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.info_outline,
+              color: AppColors.green,
+              size: 16,
+            ),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
-              style: const TextStyle(color: Color(0xFF684600), fontSize: 12),
+              style: const TextStyle(
+                color: AppColors.green,
+                fontSize: 12,
+                height: 1.4,
+              ),
             ),
           ),
         ],

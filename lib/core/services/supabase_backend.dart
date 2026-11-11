@@ -19,6 +19,7 @@ class SupabaseBackend {
 
   static bool _initialized = false;
   static Object? _initializationError;
+  static Object? _sessionRestorationError;
   static Future<void>? _initialization;
 
   static String get _publicKey {
@@ -31,6 +32,7 @@ class SupabaseBackend {
       _url.trim().isNotEmpty && _publicKey.isNotEmpty;
   static bool get isInitialized => _initialized;
   static Object? get initializationError => _initializationError;
+  static Object? get sessionRestorationError => _sessionRestorationError;
   static String get _authRedirectUri =>
       kIsWeb ? Uri.base.origin : 'com.luminhaw.plantcare://auth-callback';
 
@@ -51,7 +53,27 @@ class SupabaseBackend {
       throw StateError('SUPABASE_URL and a public Supabase key are required.');
     }
 
-    await Supabase.initialize(url: url, publishableKey: publicKey);
+    await Supabase.initialize(
+      url: url,
+      publishableKey: publicKey,
+      authOptions: const FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.pkce,
+        autoRefreshToken: true,
+        persistSession: true,
+      ),
+    );
+
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    if (session?.isExpired ?? false) {
+      try {
+        await client.auth.refreshSession();
+      } catch (error) {
+        if (client.auth.currentSession != null) {
+          _sessionRestorationError = error;
+        }
+      }
+    }
     _initialized = true;
   }
 
@@ -87,6 +109,13 @@ class SupabaseAuthService {
     email: email.trim(),
     password: password,
   );
+
+  static Future<void> refreshSessionIfExpired() async {
+    final auth = SupabaseBackend.client.auth;
+    if (auth.currentSession?.isExpired ?? false) {
+      await auth.refreshSession();
+    }
+  }
 
   static Future<AuthResponse> signUp({
     required String name,

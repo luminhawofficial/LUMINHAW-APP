@@ -31,6 +31,7 @@ class PlantRecord {
     this.plantingDate,
     this.growthStage,
     this.isSaved = false,
+    this.isVerified = false,
   });
 
   factory PlantRecord.fromStoredDetails(
@@ -74,6 +75,7 @@ class PlantRecord {
       plantingDate: optionalString('plantingDate'),
       growthStage: optionalString('growthStage'),
       isSaved: true,
+      isVerified: details?['isVerified'] == true,
     );
   }
 
@@ -108,6 +110,7 @@ class PlantRecord {
   final String? plantingDate;
   final String? growthStage;
   final bool isSaved;
+  final bool isVerified;
 
   Map<String, Object?> toStoredDetails() => {
     'scientificName': scientificName,
@@ -139,6 +142,7 @@ class PlantRecord {
     'aiGeneratedFields': aiGeneratedFields.toList(),
     'plantingDate': plantingDate,
     'growthStage': growthStage,
+    'isVerified': isVerified,
   };
 
   static Map<String, String> _storedStringMap(Object? value) {

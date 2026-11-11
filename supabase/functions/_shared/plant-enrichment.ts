@@ -174,7 +174,7 @@ export function plantFieldVerificationStatus(
   if (aiGenerated) return "AI-Generated";
   if (!source) return "Unavailable";
   if (
-    /\b(gbif|perenual|trefle|kew|plants of the world online)\b/i.test(source)
+    /\b(gbif|perenual|trefle|kew|plants of the world online|luminhaw verified catalog)\b/i.test(source)
   ) {
     return "API Verified";
   }

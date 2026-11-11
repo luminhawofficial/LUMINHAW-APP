@@ -51,7 +51,12 @@ void main() {
           },
         },
       ],
-      'entitlement': {'expires_at': '2026-11-29T00:00:00Z'},
+      'entitlement': {
+        'product_id': 'premium_30_days',
+        'status': 'active',
+        'verified_at': '2026-10-30T00:00:00Z',
+        'expires_at': '2026-11-29T00:00:00Z',
+      },
     });
 
     expect(options.enabled, isTrue);
@@ -74,6 +79,9 @@ void main() {
       DateTime.parse('2026-11-29T00:00:00Z'),
     );
     expect(options.premiumExpiresAt, DateTime.parse('2026-11-29T00:00:00Z'));
+    expect(options.premiumStartsAt, DateTime.parse('2026-10-30T00:00:00Z'));
+    expect(options.premiumProductId, 'premium_30_days');
+    expect(options.premiumStatus, 'active');
   });
 
   test('parses disabled payment service without showing sample plans', () {

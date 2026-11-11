@@ -24,6 +24,50 @@ class GeminiAssistantService {
   static Future<String> sendMessage({
     required String message,
     required List<Map<String, String>> history,
+  }) => _invoke(message: message, history: history);
+
+  static Future<String> generateCareSuggestion({
+    required String plantName,
+    required String activity,
+    required String notes,
+  }) {
+    return _invoke(
+      message: careSuggestionMessage(
+        plantName: plantName,
+        activity: activity,
+        notes: notes,
+      ),
+      history: const [],
+      careSuggestionPlantName: plantName.trim(),
+    );
+  }
+
+  @visibleForTesting
+  static String careSuggestionMessage({
+    required String plantName,
+    required String activity,
+    required String notes,
+  }) {
+    final trimmedPlantName = plantName.trim();
+    if (trimmedPlantName.isEmpty || trimmedPlantName.length > 120) {
+      throw const AssistantRequestException('The plant name is invalid.');
+    }
+
+    final trimmedActivity = activity.trim();
+    final trimmedNotes = notes.trim();
+    return '''
+Suggest what the user should do next for this plant, based only on the saved care activity and note below.
+Plant: $trimmedPlantName
+Activity: $trimmedActivity
+User note: ${trimmedNotes.isEmpty ? '(No note was added.)' : trimmedNotes}
+Give a brief, practical suggestion. If the note does not provide enough information, say what to check first. Do not diagnose disease or recommend unnecessary treatment. Respond in the language used in the user note when possible.
+''';
+  }
+
+  static Future<String> _invoke({
+    required String message,
+    required List<Map<String, String>> history,
+    String? careSuggestionPlantName,
   }) async {
     final trimmedMessage = message.trim();
 
@@ -43,22 +87,28 @@ class GeminiAssistantService {
       throw StateError('Sign in with a verified email to use LUMIN AI.');
     }
 
-    // Obtain the current session without exposing its access token.
+    await SupabaseAuthService.refreshSessionIfExpired();
     final session = SupabaseBackend.client.auth.currentSession;
 
-    if (session == null || session.accessToken.isEmpty) {
+    if (session == null || session.accessToken.isEmpty || session.isExpired) {
       throw StateError(
         'Your session has expired. Sign in again to use LUMIN AI.',
       );
     }
 
     late final FunctionResponse response;
+    final requestBody = <String, Object?>{
+      'message': trimmedMessage,
+      'history': boundedHistory(history),
+    };
+    if (careSuggestionPlantName != null) {
+      requestBody['careSuggestionPlantName'] = careSuggestionPlantName;
+    }
 
     try {
       response = await SupabaseBackend.client.functions.invoke(
         'assistant-chat',
-        headers: {'Authorization': 'Bearer ${session.accessToken}'},
-        body: {'message': trimmedMessage, 'history': boundedHistory(history)},
+        body: requestBody,
       );
     } on FunctionException catch (error) {
       throw AssistantRequestException(
@@ -150,7 +200,9 @@ class GeminiAssistantService {
     return switch (code) {
       'premium_entitlement_required' => 'LUMIN AI is a Premium feature. Subscribe to Premium to use the assistant.',
 
-      'assistant_daily_limit_reached' => 'You have reached the Basic plan limit of 10 LUMIN AI messages today. Try again tomorrow or upgrade to Premium.',
+      'assistant_daily_limit_reached' => 'You have reached the Basic plan limit of 10 LUMIN AI requests today. Try again tomorrow or upgrade to Premium.',
+
+      'plant_suggestion_daily_limit_reached' => "You have used today's AI suggestion for this plant on Basic. Premium includes up to 4 suggestions per plant each day.",
 
       'assistant_not_configured' =>
         'LUMIN AI is not configured on the server. '

@@ -15,7 +15,9 @@ class PremiumPage extends StatelessWidget {
     'Tagalog and Cebuano/Bisaya names',
     'Searchable plant library with basic information',
     'Recent scans and saved plants',
-    'LUMIN AI assistant (10 messages per day)',
+    'Growth tracking and care activity logs',
+    '1 AI suggestion per plant each day',
+    '10 LUMIN AI requests per day (including suggestions)',
   ];
 
   static const _premiumBenefits = [
@@ -23,9 +25,9 @@ class PremiumPage extends StatelessWidget {
     'Advanced plant biology',
     'Detailed nutrient information',
     'AI plant health and disease screening',
-    'Personalized care guides',
-    'Growth and care tracker',
-    'Higher LUMIN AI usage limits',
+    'Detailed personalized care guides',
+    'Up to 4 AI suggestions per plant each day',
+    'LUMIN AI prompts with no daily limit',
     'Advanced AI plant information',
   ];
 
@@ -91,6 +93,8 @@ class PremiumPage extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 16),
+                            const _SubscriptionDetailsCard(),
+                            const SizedBox(height: 16),
                             _PlanCard(
                               logo: 'assets/images/Free_logo .png',
                               name: 'BASIC',
@@ -104,7 +108,7 @@ class PremiumPage extends StatelessWidget {
                             _PlanCard(
                               logo: 'assets/images/Premium_logo .png',
                               name: 'PREMIUM',
-                              price: '₱49 / month · ₱499 / year',
+                              price: '₱49 / month\n₱499 / year · Best value',
                               description: 'Advanced plant science and AI-powered plant care',
                               benefits: _premiumBenefits,
                               selected: isPremium,
@@ -124,15 +128,11 @@ class PremiumPage extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                                onPressed: isPremium
-                                    ? null
-                                    : () => Navigator.pushNamed(
-                                        context,
-                                        '/payment',
-                                      ),
+                                onPressed: () =>
+                                    Navigator.pushNamed(context, '/payment'),
                                 child: Text(
                                   isPremium
-                                      ? 'Premium active'
+                                      ? 'View subscription and payments'
                                       : 'Subscribe Now',
                                 ),
                               ),
@@ -179,6 +179,148 @@ class PremiumPage extends StatelessWidget {
       },
     );
   }
+}
+
+class _SubscriptionDetailsCard extends StatelessWidget {
+  const _SubscriptionDetailsCard();
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: Listenable.merge([
+      PlanEntitlementStore.instance.tier,
+      PlanEntitlementStore.instance.subscriptionStatus,
+      PlanEntitlementStore.instance.productCode,
+      PlanEntitlementStore.instance.startsAt,
+      PlanEntitlementStore.instance.expiresAt,
+      PlanEntitlementStore.instance.isRefreshing,
+      PlanEntitlementStore.instance.refreshError,
+    ]),
+    builder: (context, _) {
+      final store = PlanEntitlementStore.instance;
+      final expiration = store.expiresAt.value;
+      final expiryMessage = expiration == null
+          ? 'No active Premium renewal.'
+          : store.hasPremiumAccess
+          ? 'Manual renewal required by ${_subscriptionDate(expiration)}.'
+          : 'Expired ${_subscriptionDate(expiration)}.';
+      final remindSoon =
+          store.hasPremiumAccess &&
+          expiration != null &&
+          expiration.difference(DateTime.now()).inDays <= 7;
+      return AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Subscription details',
+                    style: TextStyle(
+                      color: AppColors.green,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh subscription status',
+                  onPressed: store.isRefreshing.value
+                      ? null
+                      : () async {
+                          try {
+                            await store.refreshFromServer();
+                          } catch (error) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Subscription status could not be refreshed: $error',
+                                  ),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  icon: store.isRefreshing.value
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            _SubscriptionDetail(
+              label: 'Current plan',
+              value: store.tier.value == PlanTier.premium
+                  ? _planLabel(store.productCode.value)
+                  : 'Free · ₱0',
+            ),
+            _SubscriptionDetail(
+              label: 'Status',
+              value: store.subscriptionStatus.value,
+            ),
+            if (store.startsAt.value != null)
+              _SubscriptionDetail(
+                label: 'Started',
+                value: _subscriptionDate(store.startsAt.value!),
+              ),
+            _SubscriptionDetail(label: 'Renewal', value: expiryMessage),
+            if (remindSoon)
+              const Text(
+                'Your Premium plan expires soon. Renew before the expiry date to keep uninterrupted access.',
+                style: TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            if (store.refreshError.value != null)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'The latest entitlement could not be verified. Premium features stay locked until the account service responds.',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _SubscriptionDetail extends StatelessWidget {
+  const _SubscriptionDetail({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 86,
+          child: Text(label, style: const TextStyle(color: AppColors.muted)),
+        ),
+        Expanded(child: Text(value)),
+      ],
+    ),
+  );
+}
+
+String _planLabel(String? code) => switch (code) {
+  'premium_30_days' => 'Premium Monthly · ₱49',
+  'premium_365_days' => 'Premium Yearly · ₱499',
+  'manual_gcash' => 'Premium',
+  _ => 'Premium',
+};
+
+String _subscriptionDate(DateTime date) {
+  final local = date.toLocal();
+  return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')}';
 }
 
 class _PlanCard extends StatelessWidget {

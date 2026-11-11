@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/features/authentication/auth_screens.dart';
 import 'package:luminhaw/features/home/presentation/app_shell.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -53,7 +54,7 @@ class AppEntry extends StatelessWidget {
         if (SupabaseAuthService.currentUser != null) {
           return const AppShell();
         }
-        return snapshot.data! ? const WelcomePage() : const IntroPage();
+        return snapshot.data! ? const LoginPage() : const IntroPage();
       },
     );
   }

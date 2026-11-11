@@ -45,12 +45,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
     .order("duration_days");
   const entitlementPromise = client
     .from("subscription_entitlements")
-    .select("expires_at")
+    .select("product_id, status, expires_at, verified_at, updated_at")
     .eq("user_id", userId)
-    .eq("status", "active")
-    .gt("expires_at", new Date().toISOString())
-    .order("expires_at", { ascending: false })
-    .limit(1);
+    .order("updated_at", { ascending: false })
+    .limit(20);
   const [payments, plans, entitlements] = await Promise.all([
     paymentsPromise,
     plansPromise,
@@ -131,6 +129,12 @@ Deno.serve(async (request: Request): Promise<Response> => {
   });
   const enabled = readinessIssues.length === 0 &&
     readyPlans.length === REQUIRED_GCASH_PLANS.length;
+  const entitlementRows = entitlements.data ?? [];
+  const activeEntitlement = entitlementRows.find((entitlement) =>
+    entitlement.status === "active" &&
+    Date.parse(entitlement.expires_at) > Date.now()
+  ) ?? null;
+  const latestEntitlement = entitlementRows[0] ?? null;
   let paymentMethod = null;
   if (enabled && paymentInstructions) {
     paymentMethod = {
@@ -147,6 +151,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     paymentMethod,
     plans: enabled ? readyPlans : [],
     payments: payments.data ?? [],
-    entitlement: entitlements.data?.[0] ?? null,
+    entitlement: activeEntitlement ?? latestEntitlement,
+    activeEntitlement,
   });
 });

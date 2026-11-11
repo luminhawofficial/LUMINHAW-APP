@@ -148,6 +148,89 @@ void main() {
     expect(plants.single.acceptedTaxonId, '2877951');
   });
 
+  test('preserves verified admin content and reviewed care fields', () {
+    final plant = PlantCatalogService.parseResponse({
+      'source': 'LUMINHAW verified catalog',
+      'results': [
+        {
+          'scientific_name': 'Mangifera indica',
+          'common_name': 'Mango',
+          'tagalog_name': 'Mangga',
+          'bisaya_name': 'Mangga',
+          'family': 'Anacardiaceae',
+          'origin': 'South Asia',
+          'compatible_weather': 'Tropical',
+          'description': 'Verified mango information.',
+          'is_verified': true,
+          'plant_care': [
+            {
+              'reviewed': true,
+              'water_requirements': 'Water when the topsoil dries.',
+              'sunlight_requirements': 'Full sun',
+              'soil_requirements': 'Well-draining soil',
+            },
+          ],
+          'plant_images': [
+            {
+              'is_verified': true,
+              'is_primary': true,
+              'image_url': 'https://example.com/mango.jpg',
+              'creator': 'LUMINHAW',
+              'license': 'CC BY 4.0',
+              'source_url': 'https://example.com/source',
+            },
+          ],
+        },
+      ],
+    }).single;
+
+    expect(plant.isVerified, isTrue);
+    expect(plant.source, 'LUMINHAW verified catalog');
+    expect(plant.tagalogName, 'Mangga');
+    expect(plant.bisayaName, 'Mangga');
+    expect(plant.enrichedFields['originHabitat'], 'South Asia');
+    expect(plant.enrichedFields['weatherClimate'], 'Tropical');
+    expect(plant.enrichedFields['soilCompatibility'], 'Well-draining soil');
+    expect(plant.enrichedFields['sunlightRequirements'], 'Full sun');
+    expect(
+      plant.enrichmentSources['soilCompatibility'],
+      'LUMINHAW verified catalog',
+    );
+    expect(plant.water, 'Water when the topsoil dries.');
+    expect(plant.imageUrl, 'https://example.com/mango.jpg');
+    expect(plant.imageAttribution, 'LUMINHAW');
+    expect(plant.imageLicense, 'CC BY 4.0');
+  });
+
+  test('verified admin records take precedence over provider duplicates', () {
+    final verified = PlantCatalogService.parseResponse({
+      'source': 'LUMINHAW verified catalog',
+      'results': [
+        {
+          'scientific_name': 'Mangifera indica',
+          'common_name': 'Verified Mango',
+          'is_verified': true,
+        },
+      ],
+    });
+    final providers = PlantCatalogService.parseResponse({
+      'source': 'GBIF',
+      'results': [
+        {'scientificName': 'Mangifera indica', 'commonName': 'Provider Mango'},
+        {'scientificName': 'Carica papaya', 'commonName': 'Papaya'},
+      ],
+    });
+
+    final merged = PlantCatalogService.preferVerifiedCatalogRecords(
+      verified,
+      providers,
+    );
+    expect(merged, hasLength(2));
+    expect(merged.first.commonName, 'Verified Mango');
+    expect(merged.first.isVerified, isTrue);
+    expect(merged.last.commonName, 'Papaya');
+  });
+
   test('accepts nested and JSON-string legacy catalog formats', () {
     final plants = PlantCatalogService.parseResponse(
       '{"success":true,"data":{"source":"legacy","plants":['

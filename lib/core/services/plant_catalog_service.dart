@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart' show safePlantImageUrl;
@@ -25,6 +25,13 @@ class PlantCatalogService {
       throw StateError('Sign in with a verified email to search the catalog.');
     }
 
+    List<PlantRecord> verifiedPlants = const [];
+    try {
+      verifiedPlants = await _searchVerifiedCatalog(trimmedQuery);
+    } catch (error) {
+      debugPrint('Verified plant catalog lookup failed: $error');
+    }
+
     late final dynamic response;
     try {
       response = await SupabaseBackend.client.functions.invoke(
@@ -32,11 +39,13 @@ class PlantCatalogService {
         body: {'q': trimmedQuery},
       );
     } on FunctionException catch (error) {
+      if (verifiedPlants.isNotEmpty) return verifiedPlants;
       throw StateError(
         _messageFor(_errorCode(error.details) ?? _codeForStatus(error.status)),
       );
     }
     if (response.status < 200 || response.status >= 300) {
+      if (verifiedPlants.isNotEmpty) return verifiedPlants;
       throw StateError(
         _messageFor(
           _errorCode(response.data) ?? _codeForStatus(response.status),
@@ -44,8 +53,60 @@ class PlantCatalogService {
       );
     }
 
-    return parseResponse(response.data);
+    final providerPlants = parseResponse(response.data);
+    return preferVerifiedCatalogRecords(verifiedPlants, providerPlants);
   }
+
+  static Future<List<PlantRecord>> _searchVerifiedCatalog(String query) async {
+    final fields = [
+      'scientific_name',
+      'common_name',
+      'tagalog_name',
+      'bisaya_name',
+    ];
+    final rowsById = <String, Map<String, dynamic>>{};
+    await Future.wait(
+      fields.map((field) async {
+        final rows = await SupabaseBackend.client
+            .from('plant_catalog')
+            .select('*, plant_care(*), plant_images(*)')
+            .eq('is_verified', true)
+            .eq('is_active', true)
+            .ilike(field, '%$query%')
+            .limit(20);
+        for (final row in rows) {
+          final record = Map<String, dynamic>.from(row);
+          final id = record['id'];
+          if (id is String) rowsById[id] = record;
+        }
+      }),
+    );
+    if (rowsById.isEmpty) return const [];
+    return parseResponse({
+      'success': true,
+      'source': 'LUMINHAW verified catalog',
+      'results': rowsById.values.toList(growable: false),
+    });
+  }
+
+  @visibleForTesting
+  static List<PlantRecord> preferVerifiedCatalogRecords(
+    List<PlantRecord> verified,
+    List<PlantRecord> providers,
+  ) {
+    final names = <String>{
+      for (final plant in verified) _normalizedName(plant.scientificName),
+    };
+    return List.unmodifiable([
+      ...verified,
+      ...providers.where(
+        (plant) => names.add(_normalizedName(plant.scientificName)),
+      ),
+    ]);
+  }
+
+  static String _normalizedName(String name) =>
+      name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
 
   @visibleForTesting
   static List<PlantRecord> parseResponse(Object? response) {
@@ -94,16 +155,18 @@ class PlantCatalogService {
       );
     }
 
-    final source =
+    final defaultSource =
         _string(responseMap?['source']) ?? _string(map?['source']) ?? 'catalog';
     final seenScientificNames = <String>{};
     final plants = <PlantRecord>[];
     for (final item in records) {
       if (item is! Map) continue;
-      final rank = _string(item['rank']);
+      final rank = _string(item['rank']) ?? _string(item['taxonomic_rank']);
       if (rank != null && rank.toLowerCase() != 'species') continue;
       final taxonomicStatus =
-          _string(item['taxonomicStatus']) ?? _string(item['status']);
+          _string(item['taxonomicStatus']) ??
+          _string(item['taxonomic_status']) ??
+          _string(item['status']);
       if (taxonomicStatus != null &&
           taxonomicStatus.toLowerCase() != 'accepted') {
         continue;
@@ -127,17 +190,69 @@ class PlantCatalogService {
           _identifier(item['speciesKey']) ??
           _identifier(item['gbif_key']) ??
           _identifier(item['key']);
+      final care = _asMap(_first(item['plant_care']));
+      final image = _primaryImage(item['plant_images']);
+      final isVerified =
+          item['isVerified'] == true || item['is_verified'] == true;
+      final soil =
+          _string(item['soil_requirements']) ??
+          _string(care?['soil_requirements']) ??
+          _string(care?['soil']);
+      final sunlight =
+          _string(item['sunlight_requirements']) ??
+          _string(care?['sunlight_requirements']) ??
+          _string(care?['sunlight']);
+      final careInstructions =
+          _string(care?['watering']) ??
+          _string(care?['water_requirements']) ??
+          _string(care?['instructions']);
+      final compatibleWeather =
+          _string(item['compatible_weather']) ??
+          _string(care?['compatible_weather']);
+      final origin = _string(item['origin']);
+      final temperature = _string(care?['temperature']);
       final taxonKey =
           acceptedTaxonId ??
           scientificName.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
       if (!seenScientificNames.add(taxonKey)) continue;
 
+      final enrichedFields = <String, String>{
+        ..._stringMap(item['enrichedFields']),
+        if (origin case final value?) 'originHabitat': value,
+        if (compatibleWeather != null) 'weatherClimate': compatibleWeather,
+        if (soil != null) 'soilCompatibility': soil,
+        if (sunlight != null) 'sunlightRequirements': sunlight,
+        if (careInstructions != null) 'careInstructions': careInstructions,
+        if (temperature case final value?) 'temperatureRange': value,
+      };
+      final plantSource = isVerified
+          ? 'LUMINHAW verified catalog'
+          : _string(item['source']) ??
+                _string(item['description_source']) ??
+                defaultSource;
+      final enrichmentSources = <String, String>{
+        ..._stringMap(item['enrichmentSources']),
+        if (isVerified) ...{
+          for (final key in [
+            'scientificName',
+            'family',
+            'tagalogName',
+            'bisayaName',
+            ...enrichedFields.keys,
+          ])
+            key: plantSource,
+        },
+      };
       plants.add(
         PlantRecord(
           commonName: commonName,
           scientificName: scientificName,
           category: 'Plants',
-          water: 'Care guidance is not provided by the catalog.',
+          water:
+              _string(care?['water_requirements']) ??
+              _string(care?['watering']) ??
+              _string(care?['instructions']) ??
+              'Care guidance is not provided by the catalog.',
           image: '',
           family: _string(item['family']) ?? 'Not listed',
           order: _string(item['order']),
@@ -160,13 +275,25 @@ class PlantCatalogService {
               _string(item['formerScientificName']) ?? _string(item['synonym']),
           acceptedTaxonId: acceptedTaxonId,
           imageUrl: safePlantImageUrl(
-            item['imageUrl'] ?? item['image_url'] ?? item['defaultImageUrl'],
+            item['imageUrl'] ??
+                item['image_url'] ??
+                item['defaultImageUrl'] ??
+                image?['image_url'],
           ),
-          imageAttribution: _string(item['imageAttribution']),
-          imageLicense: _string(item['imageLicense']),
-          imageLicenseUrl: _string(item['imageLicenseUrl']),
-          imageReferenceUrl: _string(item['imageReferenceUrl']),
-          source: _string(item['source']) ?? source,
+          imageAttribution:
+              _string(item['imageAttribution']) ?? _string(image?['creator']),
+          imageLicense:
+              _string(item['imageLicense']) ?? _string(image?['license']),
+          imageLicenseUrl:
+              _string(item['imageLicenseUrl']) ??
+              _string(image?['license_url']),
+          imageReferenceUrl:
+              _string(item['imageReferenceUrl']) ??
+              _string(image?['source_url']),
+          source: plantSource,
+          enrichedFields: Map.unmodifiable(enrichedFields),
+          enrichmentSources: Map.unmodifiable(enrichmentSources),
+          isVerified: isVerified,
         ),
       );
     }
@@ -180,6 +307,34 @@ class PlantCatalogService {
 
   static Map<String, dynamic>? _asMap(Object? value) =>
       value is Map ? Map<String, dynamic>.from(value) : null;
+
+  static Object? _first(Object? value) =>
+      value is List && value.isNotEmpty ? value.first : value;
+
+  static Map<String, dynamic>? _primaryImage(Object? value) {
+    if (value is! List) return null;
+    final images = value.whereType<Map>().map(
+      (image) => Map<String, dynamic>.from(image),
+    );
+    for (final image in images) {
+      if (image['is_verified'] == true && image['is_primary'] == true) {
+        return image;
+      }
+    }
+    for (final image in images) {
+      if (image['is_verified'] == true) return image;
+    }
+    return null;
+  }
+
+  static Map<String, String> _stringMap(Object? value) {
+    final map = _asMap(value);
+    if (map == null) return const {};
+    return {
+      for (final entry in map.entries)
+        if (_string(entry.value) != null) entry.key: _string(entry.value)!,
+    };
+  }
 
   static bool _isErrorResponse(Map<String, dynamic>? payload) =>
       payload != null &&

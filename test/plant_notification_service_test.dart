@@ -37,10 +37,14 @@ void main() {
       'title': 'Scheduled maintenance',
       'body': 'The app will be briefly unavailable.',
       'category': 'maintenance',
+      'audience': 'all',
+      'dismissible': false,
       'published_at': '2026-11-10T00:00:00Z',
     });
 
     expect(announcement.category, 'maintenance');
+    expect(announcement.audience, 'all');
+    expect(announcement.dismissible, isFalse);
     expect(announcement.publishedAt, DateTime.utc(2026, 11, 10));
     expect(
       () => SystemAnnouncement.fromJson({'title': 'Incomplete'}),

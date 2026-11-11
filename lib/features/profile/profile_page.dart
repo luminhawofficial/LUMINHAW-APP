@@ -280,7 +280,7 @@ Future<void> _signOut(BuildContext context) async {
   try {
     await SupabaseAuthService.signOut();
     if (context.mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/welcome', (_) => false);
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
     }
   } catch (error) {
     if (context.mounted) {

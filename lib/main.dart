@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthChangeEvent;
 
 import 'app/app.dart';
+import 'core/services/app_version_service.dart';
 import 'core/services/plan_entitlement_store.dart';
 import 'core/services/plant_notification_service.dart';
 import 'core/services/supabase_backend.dart';
@@ -16,6 +18,7 @@ void handleAuthNavigation(
   final route = switch (event) {
     AuthChangeEvent.passwordRecovery => '/update-password',
     AuthChangeEvent.signedIn when emailVerified => '/home',
+    AuthChangeEvent.signedOut => '/login',
     _ => null,
   };
   if (route == null) return;
@@ -43,6 +46,30 @@ Future<void> main() async {
         exception: error,
         stack: stackTrace,
         library: 'Supabase initialization',
+      ),
+    );
+  }
+  if (SupabaseBackend.sessionRestorationError != null) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: StateError(
+          'The saved session could not be refreshed. The app will retry when online.',
+        ),
+        library: 'Supabase session restoration',
+      ),
+    );
+  }
+  try {
+    final packageInfo = await PackageInfo.fromPlatform();
+    await AppVersionService.recordInstalledVersion(
+      '${packageInfo.version}+${packageInfo.buildNumber}',
+    );
+  } catch (error, stackTrace) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'app version update handling',
       ),
     );
   }

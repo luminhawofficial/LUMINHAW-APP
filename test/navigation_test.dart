@@ -19,6 +19,23 @@ void main() {
     LocalPlantDataStore.instance.retryLoad();
   });
 
+  testWidgets('header actions align to the right edge of their container', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(512, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: AppHeader())),
+    );
+    await tester.pumpAndSettle();
+
+    final planBadge = tester.getRect(find.byType(PlanBadge));
+    expect(planBadge.right, 492);
+  });
+
   testWidgets('header notification and plan badge open their pages', (
     tester,
   ) async {

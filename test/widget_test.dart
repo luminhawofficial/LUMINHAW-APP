@@ -25,6 +25,7 @@ import 'package:luminhaw/features/ai_assistant/assistant_page.dart';
 import 'package:luminhaw/features/garden/garden_page.dart';
 import 'package:luminhaw/features/home/presentation/app_shell.dart';
 import 'package:luminhaw/features/library/library_page.dart';
+import 'package:luminhaw/features/onboarding/onboarding_flow.dart';
 import 'package:luminhaw/features/subscription/subscription_pages.dart';
 import 'package:luminhaw/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +33,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('completed onboarding sends signed-out users to login', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'onboarding_complete': true});
+    await tester.pumpWidget(
+      const MaterialApp(home: AppEntry()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back.'), findsOneWidget);
   });
 
   testWidgets('dashboard displays the saved garden plant photo', (
@@ -237,6 +250,7 @@ void main() {
         routes: {
           '/verification': (_) =>
               const Scaffold(body: Text('Verification pending')),
+          '/login': (_) => const Scaffold(body: Text('Login required')),
           '/home': (_) => const Scaffold(body: Text('Luminhaw home')),
           '/update-password': (_) =>
               const Scaffold(body: Text('Update password')),
@@ -252,6 +266,10 @@ void main() {
     handleAuthNavigation(AuthChangeEvent.signedIn, emailVerified: true);
     await tester.pumpAndSettle();
     expect(find.text('Luminhaw home'), findsOneWidget);
+
+    handleAuthNavigation(AuthChangeEvent.signedOut, emailVerified: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Login required'), findsOneWidget);
   });
 
   testWidgets(
@@ -383,19 +401,34 @@ void main() {
     expect(find.byTooltip('Open Lumin AI'), findsNothing);
   });
 
+  testWidgets('updated app can restart directly to login', (tester) async {
+    await tester.pumpWidget(const LuminhawApp(initialRoute: '/login'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('assistant page renders a working message entry control', (
     tester,
   ) async {
+    PlanEntitlementStore.instance.tier.value = PlanTier.free;
     await tester.pumpWidget(const MaterialApp(home: AssistantPage()));
     await tester.pumpAndSettle();
 
     expect(find.text('Your AI Assistant'), findsOneWidget);
+    expect(find.text('Basic plan · 10 prompts per day'), findsOneWidget);
     expect(
       find.text('Hi, grower! Ask me about plant care, light, or watering.'),
       findsOneWidget,
     );
     expect(find.byTooltip('Send message'), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    PlanEntitlementStore.instance.tier.value = PlanTier.premium;
+    await tester.pump();
+    expect(find.text('Premium plan · No daily prompt limit'), findsOneWidget);
+    PlanEntitlementStore.instance.tier.value = PlanTier.free;
   });
 
   testWidgets('bottom navigation fits a narrow mobile viewport', (
@@ -468,9 +501,12 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text('LUMIN AI assistant (10 messages per day)'),
+      find.text('10 LUMIN AI requests per day (including suggestions)'),
       findsOneWidget,
     );
+    expect(find.text('Growth tracking and care activity logs'), findsOneWidget);
+    expect(find.text('1 AI suggestion per plant each day'), findsOneWidget);
+    expect(find.text('Detailed personalized care guides'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -513,9 +549,10 @@ void main() {
 
     expect(find.text('BASIC'), findsOneWidget);
     expect(
-      find.text('LUMIN AI assistant (10 messages per day)'),
+      find.text('10 LUMIN AI requests per day (including suggestions)'),
       findsOneWidget,
     );
+    expect(find.text('LUMIN AI prompts with no daily limit'), findsOneWidget);
     expect(find.text('Plant scanner (camera or upload)'), findsOneWidget);
     expect(find.text('PREMIUM'), findsOneWidget);
     expect(

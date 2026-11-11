@@ -102,6 +102,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Growth journal'), findsOneWidget);
+    expect(find.text('Care activities'), findsOneWidget);
+    expect(find.text('Smart suggestion plan'), findsOneWidget);
+    expect(find.text('General reminders and cautions'), findsOneWidget);
+    expect(find.text('Smart care plan'), findsNothing);
+    expect(find.text('Premium feature'), findsNothing);
+
     final moistureTask = find.byType(Checkbox).first;
     await tester.ensureVisible(moistureTask);
     await tester.tap(moistureTask);

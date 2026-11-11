@@ -135,13 +135,14 @@ Deno.test("plant field statuses distinguish verified, generated, and missing", (
     plantFieldVerificationStatus("GBIF", false),
     plantFieldVerificationStatus("Perenual", false),
     plantFieldVerificationStatus("Trefle", false),
+    plantFieldVerificationStatus("LUMINHAW verified catalog", false),
     plantFieldVerificationStatus("Plant.ID", false),
     plantFieldVerificationStatus("LUMIN AI (Gemini)", true),
     plantFieldVerificationStatus(undefined, false),
   ];
   if (
     statuses.join("|") !==
-      "API Verified|API Verified|API Verified|Needs Verification|AI-Generated|Unavailable"
+      "API Verified|API Verified|API Verified|API Verified|Needs Verification|AI-Generated|Unavailable"
   ) {
     throw new Error("plant field verification status was misclassified");
   }

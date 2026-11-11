@@ -144,6 +144,9 @@ class PremiumPaymentOptions {
     required this.plans,
     required this.payments,
     required this.premiumExpiresAt,
+    this.premiumStartsAt,
+    this.premiumProductId,
+    this.premiumStatus = 'free',
     this.readinessIssues = const [],
   });
 
@@ -155,6 +158,9 @@ class PremiumPaymentOptions {
   final List<PremiumPaymentPlan> plans;
   final List<PremiumPaymentRecord> payments;
   final DateTime? premiumExpiresAt;
+  final DateTime? premiumStartsAt;
+  final String? premiumProductId;
+  final String premiumStatus;
   final List<String> readinessIssues;
 
   factory PremiumPaymentOptions.fromJson(Map<String, dynamic> json) {
@@ -173,7 +179,10 @@ class PremiumPaymentOptions {
       throw const FormatException('Invalid payment service response.');
     }
     final method = json['paymentMethod'];
-    final entitlement = json['entitlement'];
+    final activeEntitlement = json['activeEntitlement'];
+    final entitlement = activeEntitlement is Map<String, dynamic>
+        ? activeEntitlement
+        : json['entitlement'];
     return PremiumPaymentOptions(
       userId: userId,
       enabled: enabled,
@@ -203,6 +212,18 @@ class PremiumPaymentOptions {
       premiumExpiresAt: entitlement is Map<String, dynamic>
           ? DateTime.tryParse('${entitlement['expires_at']}')
           : null,
+      premiumStartsAt: entitlement is Map<String, dynamic>
+          ? DateTime.tryParse('${entitlement['verified_at']}')
+          : null,
+      premiumProductId:
+          entitlement is Map<String, dynamic> &&
+              entitlement['product_id'] is String
+          ? entitlement['product_id'] as String
+          : null,
+      premiumStatus:
+          entitlement is Map<String, dynamic> && entitlement['status'] is String
+          ? entitlement['status'] as String
+          : 'free',
       readinessIssues: readinessIssues == null
           ? const []
           : List<String>.from(readinessIssues as List),

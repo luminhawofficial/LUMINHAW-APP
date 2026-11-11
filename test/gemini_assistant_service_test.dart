@@ -59,7 +59,34 @@ void main() {
       GeminiAssistantService.messageForErrorCode(
         'assistant_daily_limit_reached',
       ),
-      contains('10 LUMIN AI messages today'),
+      contains('10 LUMIN AI requests today'),
     );
   });
+
+  test('explains the daily per-plant AI suggestion limit', () {
+    expect(
+      GeminiAssistantService.messageForErrorCode(
+        'plant_suggestion_daily_limit_reached',
+      ),
+      contains('up to 4 suggestions per plant each day'),
+    );
+  });
+
+  test(
+    'includes the saved plant activity note in its AI suggestion prompt',
+    () {
+      final prompt = GeminiAssistantService.careSuggestionMessage(
+        plantName: '  Tomato ',
+        activity: ' Watered ',
+        notes: 'Leaves are drooping even though the soil is wet.',
+      );
+
+      expect(prompt, contains('Plant: Tomato'));
+      expect(prompt, contains('Activity: Watered'));
+      expect(
+        prompt,
+        contains('User note: Leaves are drooping even though the soil is wet.'),
+      );
+    },
+  );
 }

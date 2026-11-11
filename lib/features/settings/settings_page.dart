@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
+import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/core/services/plant_care_recommendations.dart';
 import 'package:luminhaw/core/services/plant_notification_service.dart';
+import 'package:luminhaw/core/services/premium_payment_service.dart';
+import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,19 +23,36 @@ class NotificationsPage extends StatefulWidget {
   State<NotificationsPage> createState() => _NotificationsPageState();
 }
 
-class _NotificationsPageState extends State<NotificationsPage> {
+class _NotificationsPageState extends State<NotificationsPage>
+    with WidgetsBindingObserver {
   final _store = LocalPlantDataStore.instance;
   List<CareRecommendation> _careReminders = const [];
   List<SystemAnnouncement> _announcements = const [];
+  List<PremiumPaymentRecord> _payments = const [];
   Object? _careError;
   Object? _announcementError;
+  Object? _paymentError;
   bool _isLoading = true;
   bool _careRemindersEnabled = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadNotifications();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _loadNotifications();
+    }
   }
 
   Future<void> _loadNotifications() async {
@@ -40,6 +60,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       _isLoading = true;
       _careError = null;
       _announcementError = null;
+      _paymentError = null;
     });
     try {
       final preferences = await SharedPreferences.getInstance();
@@ -86,7 +107,46 @@ class _NotificationsPageState extends State<NotificationsPage> {
     } catch (error) {
       _announcementError = error;
     }
+    final user = SupabaseAuthService.currentUser;
+    if (user == null || user.emailConfirmedAt == null) {
+      _payments = const [];
+    } else {
+      try {
+        final options = await PremiumPaymentService.loadOptions();
+        _payments = options.payments;
+        PlanEntitlementStore.instance.applyVerifiedServerSnapshot(
+          userId: options.userId,
+          expiresAt: options.premiumExpiresAt,
+          productId: options.premiumProductId,
+          status: options.premiumStatus,
+          startsAt: options.premiumStartsAt,
+        );
+      } catch (error) {
+        _paymentError = error;
+      }
+    }
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _dismissAnnouncement(SystemAnnouncement announcement) async {
+    try {
+      await PlantNotificationService.instance.dismissAnnouncement(
+        announcement.id,
+      );
+      if (mounted) {
+        setState(() {
+          _announcements = _announcements
+              .where((item) => item.id != announcement.id)
+              .toList(growable: false);
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not dismiss announcement: $error')),
+        );
+      }
+    }
   }
 
   @override
@@ -135,6 +195,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     ),
                 ],
                 const SizedBox(height: 20),
+                _sectionTitle('Payments and subscription'),
+                if (_paymentError case final error?)
+                  SetupNotice(
+                    message: 'Payment status could not be refreshed: $error',
+                  )
+                else
+                  _PaymentNotices(payments: _payments),
+                const SizedBox(height: 20),
                 _sectionTitle('System announcements'),
                 if (_announcementError case final error?)
                   SetupNotice(
@@ -149,7 +217,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   )
                 else
                   for (final announcement in _announcements)
-                    _AnnouncementCard(announcement: announcement),
+                    _AnnouncementCard(
+                      announcement: announcement,
+                      onDismiss: announcement.dismissible
+                          ? () => _dismissAnnouncement(announcement)
+                          : null,
+                    ),
                 const SizedBox(height: 12),
                 PrimaryButton(
                   label: 'Refresh notifications',
@@ -179,6 +252,143 @@ class _NotificationsPageState extends State<NotificationsPage> {
     ),
   );
 }
+
+class _PaymentNotices extends StatelessWidget {
+  const _PaymentNotices({required this.payments});
+
+  final List<PremiumPaymentRecord> payments;
+
+  @override
+  Widget build(BuildContext context) {
+    final entitlement = PlanEntitlementStore.instance;
+    final expiration = entitlement.expiresAt.value;
+    final expiringSoon =
+        entitlement.hasPremiumAccess &&
+        expiration != null &&
+        expiration.difference(DateTime.now().toUtc()).inDays <= 7;
+    final hasExpired = entitlement.subscriptionStatus.value == 'Expired';
+    final isPremium = entitlement.hasPremiumAccess;
+    final notices = payments.take(5).toList(growable: false);
+    if (!isPremium && !expiringSoon && !hasExpired && notices.isEmpty) {
+      return const AppCard(
+        child: Text(
+          'No payment or subscription updates.',
+          style: TextStyle(color: AppColors.muted),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        if (isPremium)
+          _PaymentNoticeCard(
+            title: 'Premium subscription active',
+            detail:
+                'Your entitlement is active${entitlement.startsAt.value == null ? '' : ' since ${_announcementDate(entitlement.startsAt.value!)}'}${expiration == null ? '' : ' until ${_announcementDate(expiration)}'}.',
+            icon: Icons.verified_outlined,
+          ),
+        if (expiringSoon)
+          _PaymentNoticeCard(
+            title: 'Premium subscription expiring soon',
+            detail:
+                'Your verified Premium entitlement expires ${_announcementDate(expiration!)}. Renew before then to keep Premium access.',
+            icon: Icons.event_busy_outlined,
+          ),
+        if (hasExpired && expiration != null)
+          _PaymentNoticeCard(
+            title: 'Premium subscription expired',
+            detail:
+                'Premium access ended ${_announcementDate(expiration)}. Your saved plants and garden data remain available.',
+            icon: Icons.info_outline,
+          ),
+        for (final payment in notices)
+          _PaymentNoticeCard(
+            title: _paymentStatusTitle(payment.status),
+            detail:
+                '${payment.planName} · ${_announcementDate(payment.createdAt)} · ${_paymentStatusDescription(payment.status)}',
+            icon: _paymentStatusIcon(payment.status),
+          ),
+      ],
+    );
+  }
+}
+
+class _PaymentNoticeCard extends StatelessWidget {
+  const _PaymentNoticeCard({
+    required this.title,
+    required this.detail,
+    required this.icon,
+  });
+
+  final String title;
+  final String detail;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: AppCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.green),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: const TextStyle(color: AppColors.muted, height: 1.4),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Status retrieved from your account records.',
+                  style: TextStyle(color: AppColors.muted, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+String _paymentStatusTitle(String status) => switch (status) {
+  'pending' => 'Payment submitted · Pending',
+  'under_review' => 'Payment submitted · Manual review',
+  'approved' => 'Payment approved',
+  'rejected' => 'Payment rejected',
+  'cancelled' => 'Payment cancelled',
+  'expired' => 'Payment request expired',
+  _ => 'Payment status update',
+};
+
+String _paymentStatusDescription(String status) => switch (status) {
+  'pending' => 'Waiting for payment review.',
+  'under_review' => 'A reviewer is checking the submitted payment.',
+  'approved' => 'The payment was approved by the backend.',
+  'rejected' => 'The payment was rejected by the reviewer.',
+  'cancelled' => 'This payment request was cancelled.',
+  'expired' => 'This payment request expired without approval.',
+  _ => 'See your subscription page for the latest details.',
+};
+
+IconData _paymentStatusIcon(String status) => switch (status) {
+  'approved' => Icons.verified_outlined,
+  'rejected' || 'expired' => Icons.error_outline,
+  _ => Icons.receipt_long_outlined,
+};
+
+String _announcementDate(DateTime date) =>
+    '${date.toLocal().year}-${date.toLocal().month.toString().padLeft(2, '0')}-'
+    '${date.toLocal().day.toString().padLeft(2, '0')}';
 
 class _CareReminderCard extends StatelessWidget {
   const _CareReminderCard({required this.reminder, required this.enabled});
@@ -234,9 +444,10 @@ class _CareReminderCard extends StatelessWidget {
 }
 
 class _AnnouncementCard extends StatelessWidget {
-  const _AnnouncementCard({required this.announcement});
+  const _AnnouncementCard({required this.announcement, this.onDismiss});
 
   final SystemAnnouncement announcement;
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -244,6 +455,8 @@ class _AnnouncementCard extends StatelessWidget {
       'maintenance' => 'Maintenance',
       'feature' => 'New feature',
       'account' => 'Account',
+      'promotion' => 'Premium promotion',
+      'plant_care' => 'Plant care',
       _ => 'App update',
     };
     return Padding(
@@ -254,8 +467,16 @@ class _AnnouncementCard extends StatelessWidget {
           leading: const Icon(Icons.campaign_outlined, color: AppColors.green),
           title: Text(announcement.title),
           subtitle: Text(
-            '$category · ${_announcementDate(announcement.publishedAt)}',
+            '$category · ${announcement.audience} audience · '
+            '${_announcementDate(announcement.publishedAt)}',
           ),
+          trailing: onDismiss == null
+              ? null
+              : IconButton(
+                  tooltip: 'Dismiss announcement',
+                  onPressed: onDismiss,
+                  icon: const Icon(Icons.close, size: 19),
+                ),
           onTap: () => showDialog<void>(
             context: context,
             builder: (context) => AlertDialog(
@@ -273,10 +494,6 @@ class _AnnouncementCard extends StatelessWidget {
       ),
     );
   }
-
-  String _announcementDate(DateTime date) =>
-      '${date.toLocal().year}-${date.toLocal().month.toString().padLeft(2, '0')}-'
-      '${date.toLocal().day.toString().padLeft(2, '0')}';
 }
 
 class _SettingsPageState extends State<SettingsPage> {

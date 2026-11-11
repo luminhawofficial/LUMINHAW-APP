@@ -1,11 +1,11 @@
 {
-    "name": "luminhaw",
-    "short_name": "luminhaw",
+    "name": "LUMINHAW",
+    "short_name": "LUMINHAW",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Plant identification, learning, and care by LUMINHAW.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

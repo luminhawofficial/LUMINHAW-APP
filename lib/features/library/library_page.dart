@@ -219,6 +219,16 @@ class _PlantGridCard extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
+            if (plant.isVerified)
+              const Text(
+                'Verified by LUMINHAW',
+                maxLines: 1,
+                style: TextStyle(
+                  color: AppColors.green,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             if (plant.tagalogName != null)
               Text(
                 'Tagalog: ${plant.tagalogName}',
@@ -298,7 +308,9 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
         aiGeneratedFields: widget.plant.aiGeneratedFields,
         unavailableFields: const {},
       );
-    } else if (widget.plant.scientificName.isNotEmpty) {
+    }
+    if (widget.plant.scientificName.isNotEmpty &&
+        (widget.plant.isVerified || widget.plant.enrichedFields.isEmpty)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _loadEnrichment();
       });
@@ -358,11 +370,33 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
     try {
       final result =
           await (widget.enrichmentLoader ??
-              (plant) =>
-                  PlantEnrichmentService.load(plant: plant))(widget.plant);
+              (plant) => PlantEnrichmentService.load(
+                plant: plant,
+                sourceOverrides: plant.enrichmentSources,
+              ))(widget.plant);
       if (!mounted) return;
+      final verifiedKeys = widget.plant.enrichmentSources.keys.toSet();
+      final verifiedFields = widget.plant.enrichedFields;
+      final fields = <String, String>{...result.fields, ...verifiedFields};
+      final sources = <String, String>{
+        ...result.sources,
+        ...widget.plant.enrichmentSources,
+      };
       setState(() {
-        _enrichment = result;
+        _enrichment = PlantEnrichment(
+          fields: Map.unmodifiable(fields),
+          sources: Map.unmodifiable(sources),
+          fieldStatuses: result.fieldStatuses,
+          fieldGeneratedAt: result.fieldGeneratedAt,
+          generatedAt: result.generatedAt,
+          aiGeneratedFields: Set.unmodifiable(
+            result.aiGeneratedFields.difference(verifiedKeys),
+          ),
+          unavailableFields: Set.unmodifiable(
+            result.unavailableFields.difference(verifiedKeys),
+          ),
+          error: result.error,
+        );
         _enrichmentError = result.error;
         _isLoadingEnrichment = false;
       });
@@ -417,6 +451,23 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           PlantPhoto(asset: plant.image, imageUrl: plant.imageUrl, height: 220),
+          if (plant.isVerified) ...[
+            const SizedBox(height: 8),
+            const Row(
+              children: [
+                Icon(Icons.verified, color: AppColors.green, size: 16),
+                SizedBox(width: 5),
+                Text(
+                  'Verified by LUMINHAW',
+                  style: TextStyle(
+                    color: AppColors.green,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           ValueListenableBuilder<Map<String, Map<String, Object?>>>(
             valueListenable: SavedPlantDetailsStore.instance.savedPlants,
