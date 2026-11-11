@@ -6,6 +6,7 @@ import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/saved_plant_details_store.dart';
 import 'package:luminhaw/features/garden/add_garden_plant_page.dart';
 import 'package:luminhaw/features/garden/garden_page.dart';
+import 'package:luminhaw/features/home/presentation/app_shell.dart';
 import 'package:luminhaw/features/growth_tracker/growth_tracker_page.dart';
 import 'package:luminhaw/features/settings/settings_page.dart';
 import 'package:luminhaw/features/settings/saved_plant_details_page.dart';
@@ -256,6 +257,23 @@ void main() {
     await tester.pumpAndSettle();
     await libraryRoute;
     expect(find.byTooltip('Open Lumin AI'), findsOneWidget);
+  });
+
+  testWidgets('Lumin AI is part of the authenticated shell itself', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: AppShell()));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Open Lumin AI'), findsOneWidget);
+
+    for (final tab in ['Library', 'Garden', 'Profile', 'Home']) {
+      await tester.tap(find.text(tab).last);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Open Lumin AI'), findsOneWidget);
+    }
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Lumin AI remains visible after returning from the plan page', (

@@ -51,7 +51,10 @@ class AppEntry extends StatelessWidget {
             ),
           );
         }
-        if (SupabaseAuthService.currentUser != null) {
+        final session = SupabaseBackend.isInitialized
+            ? SupabaseBackend.client.auth.currentSession
+            : null;
+        if (session != null && !session.isExpired) {
           return const AppShell();
         }
         return snapshot.data! ? const LoginPage() : const IntroPage();

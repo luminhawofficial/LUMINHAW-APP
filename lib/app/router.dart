@@ -31,7 +31,7 @@ class LuminhawRouter {
     '/': (_) => const AppEntry(),
     '/welcome': (_) => const WelcomePage(),
     '/onboarding': (_) => const OnboardingPage(),
-    '/home': _assistantOverlay((_) => const AppShell(), aboveBottomBar: true),
+    '/home': (_) => const AppShell(),
     '/login': (_) => const LoginPage(),
     '/signup': (_) => const SignUpPage(),
     '/verification': (context) =>
@@ -71,14 +71,8 @@ class LuminhawRouter {
     '/premium': _assistantOverlay((_) => const PremiumPage()),
     '/payment': _assistantOverlay((_) => const PremiumPaymentPage()),
     '/assistant': (_) => const AssistantPage(),
-    '/library': _assistantOverlay(
-      (_) => const AppShell(initialTab: 1),
-      aboveBottomBar: true,
-    ),
-    '/profile': _assistantOverlay(
-      (_) => const AppShell(initialTab: 4),
-      aboveBottomBar: true,
-    ),
+    '/library': (_) => const AppShell(initialTab: 1),
+    '/profile': (_) => const AppShell(initialTab: 4),
     '/about': _assistantOverlay((_) => const AboutPage()),
     '/privacy': _assistantOverlay((_) => const PrivacyPage()),
   };

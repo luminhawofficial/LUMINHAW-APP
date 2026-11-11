@@ -3,6 +3,7 @@ import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/features/ai_assistant/lumin_assistant_overlay.dart';
 import 'package:luminhaw/features/garden/garden_page.dart';
 import 'package:luminhaw/features/library/library_page.dart';
 import 'package:luminhaw/features/profile/profile_page.dart';
@@ -30,98 +31,101 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: IndexedStack(index: _index, children: _tabs),
+    return LuminAssistantOverlay(
+      aboveBottomBar: true,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: IndexedStack(index: _index, children: _tabs),
+            ),
           ),
         ),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          height: 74,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0x1A0B5E48))),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _TabButton(
-                  icon: Icons.home_outlined,
-                  label: 'Home',
-                  active: _index == 0,
-                  onTap: () => setState(() => _index = 0),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Container(
+            height: 74,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0x1A0B5E48))),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _TabButton(
+                    icon: Icons.home_outlined,
+                    label: 'Home',
+                    active: _index == 0,
+                    onTap: () => setState(() => _index = 0),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _TabButton(
-                  icon: Icons.menu_book_outlined,
-                  label: 'Library',
-                  active: _index == 1,
-                  onTap: () => setState(() => _index = 1),
+                Expanded(
+                  child: _TabButton(
+                    icon: Icons.menu_book_outlined,
+                    label: 'Library',
+                    active: _index == 1,
+                    onTap: () => setState(() => _index = 1),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _index = 2),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: const BoxDecoration(
-                            color: AppColors.green,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt_outlined,
-                            size: 22,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            'Scan',
-                            style: TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 9,
-                              height: 1,
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _index = 2),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: const BoxDecoration(
+                              color: AppColors.green,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt_outlined,
+                              size: 22,
+                              color: Colors.white,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Scan',
+                              style: TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 9,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Expanded(
-                child: _TabButton(
-                  icon: Icons.yard_outlined,
-                  label: 'Garden',
-                  active: _index == 3,
-                  onTap: () => setState(() => _index = 3),
+                Expanded(
+                  child: _TabButton(
+                    icon: Icons.yard_outlined,
+                    label: 'Garden',
+                    active: _index == 3,
+                    onTap: () => setState(() => _index = 3),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: _TabButton(
-                  icon: Icons.person_outline,
-                  label: 'Profile',
-                  active: _index == 4,
-                  onTap: () => setState(() => _index = 4),
+                Expanded(
+                  child: _TabButton(
+                    icon: Icons.person_outline,
+                    label: 'Profile',
+                    active: _index == 4,
+                    onTap: () => setState(() => _index = 4),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
