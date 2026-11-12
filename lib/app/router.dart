@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/plant_identification_service.dart';
 import 'package:luminhaw/features/ai_assistant/assistant_page.dart';
+import 'package:luminhaw/features/ai_assistant/ai_search_history_page.dart';
 import 'package:luminhaw/features/ai_assistant/lumin_assistant_overlay.dart';
 import 'package:luminhaw/features/authentication/auth_screens.dart';
 import 'package:luminhaw/features/care_guide/care_guide_page.dart';
@@ -70,7 +71,10 @@ class LuminhawRouter {
     ),
     '/premium': _assistantOverlay((_) => const PremiumPage()),
     '/payment': _assistantOverlay((_) => const PremiumPaymentPage()),
-    '/assistant': (_) => const AssistantPage(),
+    '/ai-history': _assistantOverlay((_) => const AiSearchHistoryPage()),
+    '/assistant': (context) =>
+        AssistantPage(conversationId: _conversationArgument(context)),
+    '/assistant/new': (_) => const AssistantPage(startNewChat: true),
     '/library': (_) => const AppShell(initialTab: 1),
     '/profile': (_) => const AppShell(initialTab: 4),
     '/about': _assistantOverlay((_) => const AboutPage()),
@@ -97,6 +101,11 @@ class LuminhawRouter {
   }
 
   static String? _emailArgument(BuildContext context) {
+    final argument = ModalRoute.of(context)?.settings.arguments;
+    return argument is String ? argument : null;
+  }
+
+  static String? _conversationArgument(BuildContext context) {
     final argument = ModalRoute.of(context)?.settings.arguments;
     return argument is String ? argument : null;
   }

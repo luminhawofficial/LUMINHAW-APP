@@ -25,14 +25,34 @@ class AiChatMessage {
 
   bool get fromAssistant => role == 'assistant';
 
-  factory AiChatMessage.fromRow(Map<String, dynamic> row) => AiChatMessage(
-    id: row['id'] as String,
-    conversationId: row['conversation_id'] as String,
-    userId: row['user_id'] as String,
-    role: row['role'] as String,
-    message: row['message'] as String,
-    createdAt: DateTime.parse(row['created_at'] as String).toUtc(),
-  );
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'conversation_id': conversationId,
+    'user_id': userId,
+    'role': role,
+    'message': message,
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
+
+  factory AiChatMessage.fromRow(Map<String, dynamic> row) =>
+      AiChatMessage.fromJson(row);
+
+  factory AiChatMessage.fromJson(Map<String, dynamic> json) {
+    final role = _requiredString(json, 'role');
+    if (role != 'user' && role != 'assistant') {
+      throw const FormatException(
+        'Saved LUMIN AI message has an invalid role.',
+      );
+    }
+    return AiChatMessage(
+      id: _requiredString(json, 'id'),
+      conversationId: _requiredString(json, 'conversation_id'),
+      userId: _requiredString(json, 'user_id'),
+      role: role,
+      message: _requiredString(json, 'message'),
+      createdAt: DateTime.parse(_requiredString(json, 'created_at')).toUtc(),
+    );
+  }
 }
 
 class AiPendingMessage {
@@ -124,11 +144,97 @@ class AiConversationSnapshot {
   final Object? syncError;
 }
 
+class AiConversationCache {
+  const AiConversationCache({
+    required this.conversationId,
+    required this.title,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.messages,
+  });
+
+  final String conversationId;
+  final String title;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final List<AiChatMessage> messages;
+
+  Map<String, Object?> toJson() => {
+    'conversation_id': conversationId,
+    'title': title,
+    'created_at': createdAt.toUtc().toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+    'messages': messages.map((message) => message.toJson()).toList(),
+  };
+
+  factory AiConversationCache.fromJson(Map<String, dynamic> json) {
+    final rawMessages = json['messages'];
+    if (rawMessages is! List) {
+      throw const FormatException('Saved LUMIN AI conversation is invalid.');
+    }
+    final conversationId = _requiredString(json, 'conversation_id');
+    final messages = rawMessages
+        .map((item) {
+          if (item is! Map) {
+            throw const FormatException(
+              'Saved LUMIN AI conversation message is invalid.',
+            );
+          }
+          return AiChatMessage.fromJson(Map<String, dynamic>.from(item));
+        })
+        .toList(growable: false);
+    if (messages.any((message) => message.conversationId != conversationId)) {
+      throw const FormatException(
+        'Saved LUMIN AI conversation contains unrelated messages.',
+      );
+    }
+    return AiConversationCache(
+      conversationId: conversationId,
+      title: _requiredString(json, 'title'),
+      createdAt: DateTime.parse(
+        (json['created_at'] as String?) ?? _requiredString(json, 'updated_at'),
+      ).toUtc(),
+      updatedAt: DateTime.parse(_requiredString(json, 'updated_at')).toUtc(),
+      messages: messages,
+    );
+  }
+}
+
+class AiConversationHistoryItem {
+  const AiConversationHistoryItem({
+    required this.id,
+    required this.title,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.preview,
+    required this.searchText,
+  });
+
+  final String id;
+  final String title;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String preview;
+  final String searchText;
+}
+
+class AiConversationHistorySnapshot {
+  const AiConversationHistorySnapshot({
+    required this.conversations,
+    this.syncError,
+  });
+
+  final List<AiConversationHistoryItem> conversations;
+  final Object? syncError;
+}
+
 class AiConversationService {
   AiConversationService._();
 
   static const _outboxPrefix = 'ai_chat_outbox_';
+  static const _cachePrefix = 'ai_chat_cache_';
   static final _random = Random.secure();
+  static final Map<String, String> _activeConversationIds = {};
 
   static String newId() {
     final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
@@ -141,65 +247,248 @@ class AiConversationService {
         '${value.substring(20)}';
   }
 
-  static Future<AiConversationSnapshot> loadLatestConversation() async {
+  static String currentSessionConversationId() {
+    final userId = _currentUserId();
+    return _activeConversationIds.putIfAbsent(userId, newId);
+  }
+
+  static String startNewConversation() {
+    final userId = _currentUserId();
+    final id = newId();
+    _activeConversationIds[userId] = id;
+    return id;
+  }
+
+  static String activateConversation(String conversationId) {
+    final userId = _currentUserId();
+    _activeConversationIds[userId] = conversationId;
+    return conversationId;
+  }
+
+  static List<AiConversationHistoryItem> filterConversationHistory(
+    List<AiConversationHistoryItem> conversations,
+    String query,
+  ) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return List.unmodifiable(conversations);
+    return List.unmodifiable(
+      conversations.where(
+        (conversation) =>
+            conversation.title.toLowerCase().contains(normalizedQuery) ||
+            conversation.preview.toLowerCase().contains(normalizedQuery) ||
+            conversation.searchText.toLowerCase().contains(normalizedQuery),
+      ),
+    );
+  }
+
+  static Future<AiConversationHistorySnapshot> loadConversationHistory({
+    int limit = 250,
+  }) async {
+    if (limit < 1 || limit > 250) {
+      throw RangeError.range(limit, 1, 250, 'limit');
+    }
+
     final userId = _currentUserId();
     final pendingMessages = await _readPendingMessages(userId);
+    final cachedConversation = await _readCachedConversation(userId);
+    final remoteConversations = <AiConversationHistoryItem>[];
+    Object? syncError;
+    var remoteLoaded = false;
+
+    try {
+      final rows = await SupabaseBackend.client
+          .from('ai_conversations')
+          .select('id,title,created_at,updated_at')
+          .eq('user_id', userId)
+          .order('updated_at', ascending: false)
+          .limit(limit);
+      final conversations = (rows as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
+      if (conversations.isNotEmpty) {
+        final conversationIds = conversations
+            .map((row) => row['id'] as String)
+            .toList(growable: false);
+        final messages = <AiChatMessage>[];
+        var offset = 0;
+        const pageSize = 1000;
+        while (true) {
+          final messageRows = await SupabaseBackend.client
+              .from('ai_messages')
+              .select('id,conversation_id,user_id,role,message,created_at')
+              .eq('user_id', userId)
+              .inFilter('conversation_id', conversationIds)
+              .order('created_at')
+              .order('id')
+              .range(offset, offset + pageSize - 1);
+          final batch = (messageRows as List)
+              .map(
+                (row) => AiChatMessage.fromRow(
+                  Map<String, dynamic>.from(row as Map),
+                ),
+              )
+              .toList(growable: false);
+          messages.addAll(batch);
+          if (batch.length < pageSize) break;
+          offset += pageSize;
+        }
+
+        for (final row in conversations) {
+          final id = row['id'] as String;
+          final conversationMessages = messages
+              .where((message) => message.conversationId == id)
+              .toList(growable: false);
+          remoteConversations.add(
+            AiConversationHistoryItem(
+              id: id,
+              title: row['title'] as String,
+              createdAt: DateTime.parse(row['created_at'] as String).toUtc(),
+              updatedAt: DateTime.parse(row['updated_at'] as String).toUtc(),
+              preview: conversationMessages.isEmpty
+                  ? ''
+                  : conversationMessages.last.message,
+              searchText: conversationMessages
+                  .map((message) => message.message)
+                  .join('\n'),
+            ),
+          );
+        }
+      }
+      remoteLoaded = true;
+    } catch (error) {
+      if (pendingMessages.isEmpty && cachedConversation == null) rethrow;
+      syncError = error;
+    }
+
+    final byId = {
+      for (final conversation in remoteConversations)
+        conversation.id: conversation,
+    };
+    if (cachedConversation != null &&
+        (!remoteLoaded ||
+            remoteConversations.any(
+              (item) => item.id == cachedConversation.conversationId,
+            ) ||
+            pendingMessages.any(
+              (item) =>
+                  item.conversationId == cachedConversation.conversationId,
+            ))) {
+      final cachedMessages = cachedConversation.messages;
+      final latestCachedMessage = cachedMessages.isEmpty
+          ? null
+          : mergeMessages(cachedMessages).last;
+      final existing = byId[cachedConversation.conversationId];
+      byId[cachedConversation.conversationId] = AiConversationHistoryItem(
+        id: cachedConversation.conversationId,
+        title: existing?.title ?? cachedConversation.title,
+        createdAt: existing?.createdAt ?? cachedConversation.createdAt,
+        updatedAt:
+            existing != null &&
+                existing.updatedAt.isAfter(cachedConversation.updatedAt)
+            ? existing.updatedAt
+            : cachedConversation.updatedAt,
+        preview: latestCachedMessage?.message ?? existing?.preview ?? '',
+        searchText: [
+          existing?.searchText ?? '',
+          for (final message in cachedMessages) message.message,
+        ].where((text) => text.isNotEmpty).join('\n'),
+      );
+    }
+    for (final pending in pendingMessages) {
+      final existing = byId[pending.conversationId];
+      final pendingUpdatedAt = pending.assistantCreatedAt ?? pending.createdAt;
+      if (existing?.updatedAt.isAfter(pendingUpdatedAt) != true) {
+        byId[pending.conversationId] = AiConversationHistoryItem(
+          id: pending.conversationId,
+          title: existing?.title ?? pending.conversationTitle,
+          createdAt: existing?.createdAt ?? pending.createdAt,
+          updatedAt: pendingUpdatedAt,
+          preview: pending.assistantReply ?? pending.message,
+          searchText: [
+            existing?.searchText ?? '',
+            pending.message,
+            ?pending.assistantReply,
+          ].where((text) => text.isNotEmpty).join('\n'),
+        );
+      }
+    }
+    final results = byId.values.toList()
+      ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return AiConversationHistorySnapshot(
+      conversations: List.unmodifiable(results.take(limit)),
+      syncError: syncError,
+    );
+  }
+
+  static Future<AiConversationSnapshot> loadConversation(
+    String conversationId,
+  ) async {
+    final userId = _currentUserId();
+    final pendingMessages = await _readPendingMessages(userId);
+    final cachedConversation = await _readCachedConversation(userId);
     Map<String, dynamic>? conversationRow;
     var remoteMessages = <AiChatMessage>[];
     Object? syncError;
+    var remoteLoaded = false;
 
     try {
       conversationRow = await SupabaseBackend.client
           .from('ai_conversations')
           .select('id,title,updated_at')
+          .eq('id', conversationId)
           .eq('user_id', userId)
-          .order('updated_at', ascending: false)
-          .limit(1)
           .maybeSingle();
 
       if (conversationRow != null) {
-        final rows = await SupabaseBackend.client
-            .from('ai_messages')
-            .select('id,conversation_id,user_id,role,message,created_at')
-            .eq('conversation_id', conversationRow['id'] as String)
-            .eq('user_id', userId)
-            .order('created_at')
-            .order('id');
-        remoteMessages = (rows as List)
-            .map(
-              (row) =>
-                  AiChatMessage.fromRow(Map<String, dynamic>.from(row as Map)),
-            )
-            .toList(growable: false);
+        var offset = 0;
+        const pageSize = 1000;
+        while (true) {
+          final rows = await SupabaseBackend.client
+              .from('ai_messages')
+              .select('id,conversation_id,user_id,role,message,created_at')
+              .eq('conversation_id', conversationRow['id'] as String)
+              .eq('user_id', userId)
+              .order('created_at')
+              .order('id')
+              .range(offset, offset + pageSize - 1);
+          final batch = (rows as List)
+              .map(
+                (row) => AiChatMessage.fromRow(
+                  Map<String, dynamic>.from(row as Map),
+                ),
+              )
+              .toList(growable: false);
+          remoteMessages.addAll(batch);
+          if (batch.length < pageSize) break;
+          offset += pageSize;
+        }
       }
+      remoteLoaded = true;
     } catch (error) {
-      if (pendingMessages.isEmpty) rethrow;
+      final hasLocalConversation =
+          cachedConversation?.conversationId == conversationId ||
+          pendingMessages.any(
+            (pending) => pending.conversationId == conversationId,
+          );
+      if (!hasLocalConversation) rethrow;
       syncError = error;
     }
 
-    final latestPending = pendingMessages.isEmpty ? null : pendingMessages.last;
-    final usePendingConversation =
-        latestPending != null &&
-        (conversationRow == null ||
-            latestPending.createdAt.isAfter(
-              DateTime.parse(conversationRow['updated_at'] as String).toUtc(),
-            ));
-    final conversationId = usePendingConversation
-        ? latestPending.conversationId
-        : conversationRow?['id'] as String?;
-    final conversationTitle = usePendingConversation
-        ? latestPending.conversationTitle
-        : conversationRow?['title'] as String?;
-
-    if (conversationId == null) {
-      return AiConversationSnapshot(
-        conversationId: null,
-        title: null,
-        messages: const [],
-        pendingMessages: pendingMessages,
-        syncError: syncError,
-      );
-    }
+    final remoteUpdatedAt = conversationRow == null
+        ? null
+        : DateTime.parse(conversationRow['updated_at'] as String).toUtc();
+    final useCachedConversation =
+        cachedConversation?.conversationId == conversationId &&
+        (!remoteLoaded ||
+            conversationRow != null &&
+                cachedConversation!.updatedAt.isAfter(remoteUpdatedAt!));
+    final conversationTitle = useCachedConversation
+        ? cachedConversation!.title
+        : conversationRow?['title'] as String? ??
+              pendingMessages
+                  .where((pending) => pending.conversationId == conversationId)
+                  .firstOrNull
+                  ?.conversationTitle;
 
     final localMessages = <AiChatMessage>[];
     for (final pending in pendingMessages.where(
@@ -231,8 +520,35 @@ class AiConversationService {
 
     final messages = mergeMessages([
       ...remoteMessages.where((item) => item.conversationId == conversationId),
+      if (useCachedConversation) ...cachedConversation!.messages,
       ...localMessages,
     ]);
+
+    if (remoteLoaded &&
+        conversationTitle != null &&
+        messages.isNotEmpty &&
+        conversationRow != null) {
+      try {
+        final lastMessageAt = messages.last.createdAt;
+        final updatedAt = lastMessageAt.isAfter(remoteUpdatedAt!)
+            ? lastMessageAt
+            : remoteUpdatedAt;
+        await _writeCachedConversation(
+          userId,
+          AiConversationCache(
+            conversationId: conversationId,
+            title: conversationTitle,
+            createdAt: cachedConversation?.conversationId == conversationId
+                ? cachedConversation!.createdAt
+                : messages.first.createdAt,
+            updatedAt: updatedAt,
+            messages: messages,
+          ),
+        );
+      } catch (error) {
+        syncError ??= error;
+      }
+    }
 
     return AiConversationSnapshot(
       conversationId: conversationId,
@@ -348,6 +664,34 @@ class AiConversationService {
           onConflict: 'id',
           ignoreDuplicates: true,
         );
+    await _cacheSyncedReply(pending);
+  }
+
+  static Future<void> deleteConversation(String conversationId) async {
+    final userId = _currentUserId();
+    await SupabaseBackend.client
+        .from('ai_conversations')
+        .delete()
+        .eq('id', conversationId)
+        .eq('user_id', userId);
+
+    final pendingMessages = await _readPendingMessages(userId);
+    pendingMessages.removeWhere(
+      (pending) => pending.conversationId == conversationId,
+    );
+    await _writePendingMessages(userId, pendingMessages);
+
+    final preferences = await SharedPreferences.getInstance();
+    final cachedConversation = await _readCachedConversation(userId);
+    if (cachedConversation?.conversationId == conversationId) {
+      final removed = await preferences.remove('$_cachePrefix$userId');
+      if (!removed) {
+        throw StateError('The deleted LUMIN AI conversation cache remains.');
+      }
+    }
+    if (_activeConversationIds[userId] == conversationId) {
+      _activeConversationIds.remove(userId);
+    }
   }
 
   static Future<void> removePendingMessage(AiPendingMessage pending) async {
@@ -415,6 +759,99 @@ class AiConversationService {
         'The unsynchronized LUMIN AI message could not be saved.',
       );
     }
+  }
+
+  static Future<AiConversationCache?> _readCachedConversation(
+    String userId,
+  ) async {
+    final preferences = await SharedPreferences.getInstance();
+    final saved = preferences.getString('$_cachePrefix$userId');
+    if (saved == null) return null;
+
+    final decoded = jsonDecode(saved);
+    if (decoded is! Map) {
+      throw const FormatException('Saved LUMIN AI conversation is invalid.');
+    }
+    final cache = AiConversationCache.fromJson(
+      Map<String, dynamic>.from(decoded),
+    );
+    if (cache.messages.any((message) => message.userId != userId)) {
+      throw const FormatException(
+        'Saved LUMIN AI conversation belongs to another account.',
+      );
+    }
+    return cache;
+  }
+
+  static Future<void> _writeCachedConversation(
+    String userId,
+    AiConversationCache cache,
+  ) async {
+    if (cache.messages.any((message) => message.userId != userId)) {
+      throw StateError('The LUMIN AI conversation belongs to another account.');
+    }
+    final preferences = await SharedPreferences.getInstance();
+    final saved = await preferences.setString(
+      '$_cachePrefix$userId',
+      jsonEncode(cache.toJson()),
+    );
+    if (!saved) {
+      throw StateError('The LUMIN AI conversation could not be cached.');
+    }
+  }
+
+  static Future<void> _cacheSyncedReply(AiPendingMessage pending) async {
+    final reply = pending.assistantReply;
+    final assistantMessageId = pending.assistantMessageId;
+    final assistantCreatedAt = pending.assistantCreatedAt;
+    if (reply == null ||
+        assistantMessageId == null ||
+        assistantCreatedAt == null) {
+      throw StateError('The pending LUMIN AI response is incomplete.');
+    }
+
+    final existing = await _readCachedConversation(pending.userId);
+    final existingMessages = existing?.conversationId == pending.conversationId
+        ? existing!.messages
+        : const <AiChatMessage>[];
+    final userMessage = AiChatMessage(
+      id: pending.userMessageId,
+      conversationId: pending.conversationId,
+      userId: pending.userId,
+      role: 'user',
+      message: pending.message,
+      createdAt: pending.createdAt,
+    );
+    final assistantMessage = AiChatMessage(
+      id: assistantMessageId,
+      conversationId: pending.conversationId,
+      userId: pending.userId,
+      role: 'assistant',
+      message: reply,
+      createdAt: assistantCreatedAt,
+    );
+    final messages = mergeMessages([
+      ...existingMessages,
+      userMessage,
+      assistantMessage,
+    ]);
+    final now = DateTime.now().toUtc();
+    final updatedAt = now.isAfter(assistantCreatedAt)
+        ? now
+        : assistantCreatedAt;
+
+    await _writeCachedConversation(
+      pending.userId,
+      AiConversationCache(
+        conversationId: pending.conversationId,
+        title: pending.conversationTitle,
+        createdAt: existing?.conversationId == pending.conversationId
+            ? existing!.createdAt
+            : pending.createdAt,
+        updatedAt: updatedAt,
+        messages: messages,
+      ),
+    );
   }
 
   @visibleForTesting

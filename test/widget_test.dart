@@ -424,6 +424,7 @@ void main() {
       find.text('Hi, grower! Ask me about plant care, light, or watering.'),
       findsOneWidget,
     );
+    expect(find.byKey(const ValueKey('new-ai-chat')), findsOneWidget);
     expect(find.byTooltip('Send message'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -522,6 +523,13 @@ void main() {
 
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('LUMIN AI history'), 200);
+    await tester.tap(find.text('LUMIN AI history'));
+    await tester.pumpAndSettle();
+    expect(find.text('Search conversations'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+
     await tester.scrollUntilVisible(find.text('Help / About'), 200);
     await tester.tap(find.text('Help / About'));
     await tester.pumpAndSettle();

@@ -11,7 +11,14 @@ import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 
 class AssistantPage extends StatefulWidget {
-  const AssistantPage({super.key});
+  const AssistantPage({
+    super.key,
+    this.conversationId,
+    this.startNewChat = false,
+  });
+
+  final String? conversationId;
+  final bool startNewChat;
 
   @override
   State<AssistantPage> createState() => _AssistantPageState();
@@ -52,7 +59,7 @@ class _AssistantPageState extends State<AssistantPage>
         if (mounted) setState(() => _historyError = error);
       },
     );
-    unawaited(_restoreConversation());
+    unawaited(_restoreConversation(widget.conversationId, widget.startNewChat));
   }
 
   @override
@@ -85,19 +92,28 @@ class _AssistantPageState extends State<AssistantPage>
     }
   }
 
-  Future<void> _restoreConversation() async {
-    setState(() {
-      _isLoadingHistory = true;
-      _historyError = null;
-      _isHistoryLoadError = false;
-    });
-
+  Future<void> _restoreConversation([
+    String? conversationId,
+    bool startNewChat = false,
+  ]) async {
     try {
-      final snapshot = await AiConversationService.loadLatestConversation();
+      final id = startNewChat
+          ? AiConversationService.startNewConversation()
+          : conversationId == null
+          ? AiConversationService.currentSessionConversationId()
+          : AiConversationService.activateConversation(conversationId);
+      if (!mounted) return;
+      setState(() {
+        _conversationId = id;
+        _isLoadingHistory = true;
+        _historyError = null;
+        _isHistoryLoadError = false;
+      });
+
+      final snapshot = await AiConversationService.loadConversation(id);
       if (!mounted) return;
 
       setState(() {
-        _conversationId = snapshot.conversationId;
         _conversationTitle = snapshot.title;
         _messages
           ..clear()
@@ -132,6 +148,30 @@ class _AssistantPageState extends State<AssistantPage>
         _isHistoryLoadError = true;
         _isLoadingHistory = false;
       });
+    }
+  }
+
+  Future<void> _startNewChat() async {
+    try {
+      final conversationId = AiConversationService.startNewConversation();
+      if (!mounted) return;
+      setState(() {
+        _conversationId = conversationId;
+        _conversationTitle = null;
+        _messages.clear();
+        _pendingMessages.clear();
+        _pendingMessageIds.clear();
+        _message.clear();
+        _historyError = null;
+        _isHistoryLoadError = false;
+        _isLoadingHistory = false;
+      });
+      if (_chatScroll.hasClients) _chatScroll.jumpTo(0);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not start a new chat: $error')),
+      );
     }
   }
 
@@ -346,13 +386,25 @@ class _AssistantPageState extends State<AssistantPage>
                       ),
                     ),
 
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        key: const ValueKey('new-ai-chat'),
+                        onPressed: _isSending || _isLoadingHistory
+                            ? null
+                            : _startNewChat,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('New chat'),
+                      ),
+                    ),
+
                     const SizedBox(height: 24),
 
                     if (_isLoadingHistory)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 8),
                         child: Text(
-                          'Restoring your latest conversation…',
+                          'Loading conversation…',
                           style: TextStyle(
                             color: AppColors.muted,
                             fontSize: 11,

@@ -100,6 +100,11 @@ class _ProfilePageState extends State<ProfilePage> {
                 onTap: () => Navigator.pushNamed(context, '/history'),
               ),
               _ProfileLink(
+                icon: Icons.auto_awesome_outlined,
+                title: 'LUMIN AI history',
+                onTap: () => Navigator.pushNamed(context, '/ai-history'),
+              ),
+              _ProfileLink(
                 icon: Icons.bookmark_border,
                 title: 'Saved plant details',
                 onTap: () =>
