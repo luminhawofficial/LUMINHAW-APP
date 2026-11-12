@@ -1,4 +1,5 @@
 import {
+  customerPaymentAccessMessage,
   paymentEmailHtmlDocument,
   resolvePaymentEmailRecipient,
   sendResendEmail,
@@ -83,6 +84,33 @@ Deno.test("payment email HTML declares UTF-8", () => {
     !document.includes("<p>Payment reviewed.</p>")
   ) {
     throw new Error("Email HTML must declare UTF-8 and preserve its content.");
+  }
+});
+
+Deno.test("approved payment email confirms Premium activation and provides next steps", () => {
+  const message = customerPaymentAccessMessage(
+    "approved",
+    "2027-11-12T00:00:00Z",
+  );
+  if (
+    !message.includes("your Premium plan is active") ||
+    !message.includes("Sign in to LUMINHAW") ||
+    !message.includes("No additional purchase is needed") ||
+    !message.includes("2027-11-12T00:00:00Z")
+  ) {
+    throw new Error(
+      "Approved payment email must confirm access and explain what to do next.",
+    );
+  }
+});
+
+Deno.test("rejected payment email does not imply Premium was activated", () => {
+  const message = customerPaymentAccessMessage("rejected", null);
+  if (
+    !message.includes("has not been activated") ||
+    message.includes("Premium access is active")
+  ) {
+    throw new Error("Rejected payment email must not claim Premium access.");
   }
 });
 

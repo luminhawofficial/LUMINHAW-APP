@@ -46,6 +46,21 @@ export function paymentEmailHtmlDocument(content: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="UTF-8"></head><body>${content}</body></html>`;
 }
 
+export function customerPaymentAccessMessage(
+  paymentStatus: string,
+  entitlementExpiresAt: string | null,
+): string {
+  if (paymentStatus !== "approved") {
+    return "<p>Your payment was not approved, so your Premium plan has not been activated.</p>";
+  }
+  const expiryMessage = entitlementExpiresAt
+    ? `<p>Premium access is active until ${
+      escapeHtml(entitlementExpiresAt)
+    }.</p>`
+    : "";
+  return `<p>Your payment is approved and your Premium plan is active. Sign in to LUMINHAW to use Premium features. No additional purchase is needed for this payment.</p>${expiryMessage}`;
+}
+
 export async function sendResendEmail(
   {
     apiKey,
@@ -385,13 +400,11 @@ export async function deliverPaymentNotification(
       )
     }</p>
       ${
-      payment.payment_status === "approved" && payment.entitlement_expires_at
-        ? `<p>Premium access is active until ${
-          escapeHtml(payment.entitlement_expires_at)
-        }.</p>`
-        : ""
-    }
-      <p>Premium access is activated only after an authorized email approval.</p>`;
+      customerPaymentAccessMessage(
+        payment.payment_status,
+        payment.entitlement_expires_at,
+      )
+    }`;
   const html = paymentEmailHtmlDocument(htmlContent);
 
   const emailResult = await sendResendEmail({

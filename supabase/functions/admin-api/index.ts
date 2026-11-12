@@ -478,7 +478,7 @@ async function handleAdminRequest(
         console.error("Customer payment notice lookup failed:", notificationError.code);
         return jsonResponse({
           review,
-          notification: { status: "queued", warning: "delivery_status_unavailable" },
+          notification: { status: "unknown", warning: "delivery_status_unavailable" },
         });
       }
       if (!notification) {
@@ -489,10 +489,15 @@ async function handleAdminRequest(
       }
 
       const delivery = await deliverPaymentNotification(context.client, notification.id);
+      const deliveryStatus = delivery.delivered
+        ? "sent"
+        : delivery.errorCode === "notification_already_processing"
+        ? "processing"
+        : "failed";
       return jsonResponse({
         review,
         notification: {
-          status: delivery.delivered ? "sent" : "queued",
+          status: deliveryStatus,
           ...(delivery.delivered ? {} : { warning: delivery.errorCode }),
         },
       });
