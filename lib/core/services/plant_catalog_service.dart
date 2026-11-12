@@ -216,14 +216,18 @@ class PlantCatalogService {
           scientificName.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
       if (!seenScientificNames.add(taxonKey)) continue;
 
+      final optionalEnrichedFields = {
+        ?origin: 'originHabitat',
+        ?compatibleWeather: 'weatherClimate',
+        ?soil: 'soilCompatibility',
+        ?sunlight: 'sunlightRequirements',
+        ?careInstructions: 'careInstructions',
+        ?temperature: 'temperatureRange',
+      };
       final enrichedFields = <String, String>{
         ..._stringMap(item['enrichedFields']),
-        'originHabitat': origin?,
-        'weatherClimate': compatibleWeather?,
-        'soilCompatibility': soil?,
-        'sunlightRequirements': sunlight?,
-        'careInstructions': careInstructions?,
-        'temperatureRange': temperature?,
+        for (final entry in optionalEnrichedFields.entries)
+          entry.value: entry.key,
       };
       final plantSource = isVerified
           ? 'LUMINHAW verified catalog'
