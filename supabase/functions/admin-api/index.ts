@@ -6,6 +6,7 @@ import {
   authenticatedUserId,
   enforceRateLimit,
 } from "../_shared/auth.ts";
+import { isValidAnnouncementSchedule } from "../_shared/announcements.ts";
 import { deliverPaymentNotification } from "../_shared/payment-email.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
 
@@ -670,17 +671,16 @@ async function handleAdminRequest(
       const dismissible = body.dismissible !== false;
       const publishedAt = typeof body.published_at === "string"
         ? body.published_at
-        : new Date().toISOString();
+        : "";
       const expiresAt = typeof body.expires_at === "string"
         ? body.expires_at
-        : null;
+        : "";
       if (
         title.length < 1 || title.length > 120 ||
         message.length < 1 || message.length > 4000 ||
         !["update", "maintenance", "feature", "account", "promotion", "plant_care"].includes(String(category)) ||
         !["all", "free", "premium"].includes(String(audience)) ||
-        !Number.isFinite(Date.parse(publishedAt)) ||
-        (expiresAt !== null && !Number.isFinite(Date.parse(expiresAt)))
+        !isValidAnnouncementSchedule(publishedAt, expiresAt)
       ) {
         return jsonResponse({ error: { code: "invalid_announcement" } }, 400);
       }
