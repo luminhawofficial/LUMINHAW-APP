@@ -39,9 +39,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({'onboarding_complete': true});
-    await tester.pumpWidget(
-      const MaterialApp(home: AppEntry()),
-    );
+    await tester.pumpWidget(const MaterialApp(home: AppEntry()));
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome back.'), findsOneWidget);
@@ -232,12 +230,16 @@ void main() {
 
     await tester.tap(find.text('Forgot password?'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Send reset link'));
+    await tester.tap(find.text('Send Reset Link'));
     await tester.pumpAndSettle();
     expect(find.text('Enter a valid email address'), findsOneWidget);
 
     await openRoute(tester, '/update-password');
-    expect(find.text('Choose a new password'), findsOneWidget);
+    expect(find.text('Create New Password'), findsOneWidget);
+    expect(
+      find.textContaining('invalid, expired, or has already been used'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('verified email callback returns to the app home', (

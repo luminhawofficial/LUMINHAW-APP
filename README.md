@@ -291,6 +291,27 @@ when their matching migration, configuration, and feature are required. Do
 not deploy the separate auxiliary `plant-perenual` function over the app's
 `plant-care` endpoint; their contracts differ.
 
+Password recovery uses the Android callback
+`com.luminhaw.plantcare://auth/reset-password`; the existing email-verification
+callback remains `com.luminhaw.plantcare://auth-callback`. The Android intent
+filters and Supabase URL scheme handling are in the app configuration. The
+recovery email template is
+[`supabase/templates/recovery.html`](supabase/templates/recovery.html), with
+its Supabase CLI configuration in `supabase/config.toml`. Review and apply the
+recovery template and redirect allowlist in the linked Supabase project
+(Dashboard → Authentication → URL Configuration and Email Templates → Reset
+Password). Add both app callbacks to the allowed redirect URLs. Set the
+Supabase Site URL to the deployed Flutter web app origin and allow both that
+origin and its `?flow=password-reset` callback as redirect URLs so the
+template's browser fallback works on devices without the app. The template's
+fallback verify endpoint targets the currently linked project; update its
+project URL if linking a different Supabase project.
+
+There is no deployed Flutter web origin configured for this project yet, so
+the browser fallback will only work after the web app is hosted and the
+production Site URL and allowlist are updated. Do not push this template to the
+production project before that URL is configured.
+
 For local Edge Function development, create a private local environment file
 from the placeholders in
 [`supabase/functions/.env.example`](supabase/functions/.env.example). Keep

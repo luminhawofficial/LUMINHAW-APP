@@ -37,6 +37,7 @@ void handleAuthNavigation(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SupabaseBackend.startAuthLinkObserver();
   try {
     await SupabaseBackend.initialize();
   } catch (error, stackTrace) {
@@ -74,36 +75,61 @@ Future<void> main() async {
     );
   }
   if (SupabaseBackend.isInitialized) {
-    SupabaseBackend.client.auth.onAuthStateChange.listen((authState) async {
-      handleAuthNavigation(
-        authState.event,
-        emailVerified: authState.session?.user.emailConfirmedAt != null,
-      );
-      try {
-        await PlanEntitlementStore.instance.refreshFromServer();
-      } catch (error, stackTrace) {
-        FlutterError.reportError(
-          FlutterErrorDetails(
-            exception: error,
-            stack: stackTrace,
-            library: 'subscription entitlement refresh',
-          ),
+    SupabaseBackend.client.auth.onAuthStateChange.listen(
+      (authState) async {
+        if (authState.event == AuthChangeEvent.passwordRecovery) {
+          SupabaseAuthService.recordPasswordRecoverySession(authState.session);
+        } else if (authState.event == AuthChangeEvent.signedIn ||
+            authState.event == AuthChangeEvent.signedOut) {
+          SupabaseAuthService.clearPasswordRecoverySession();
+        }
+        handleAuthNavigation(
+          authState.event,
+          emailVerified: authState.session?.user.emailConfirmedAt != null,
         );
-      }
-      try {
-        await refreshEnabledCareReminders();
-      } catch (error, stackTrace) {
-        FlutterError.reportError(
-          FlutterErrorDetails(
-            exception: error,
-            stack: stackTrace,
-            library: 'care reminder scheduling',
-          ),
+        try {
+          await PlanEntitlementStore.instance.refreshFromServer();
+        } catch (error, stackTrace) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'subscription entitlement refresh',
+            ),
+          );
+        }
+        try {
+          await refreshEnabledCareReminders();
+        } catch (error, stackTrace) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'care reminder scheduling',
+            ),
+          );
+        }
+      },
+      onError: (Object _, StackTrace _) {
+        if (!SupabaseBackend.consumePendingPasswordResetCallback()) return;
+        appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/update-password',
+          (_) => false,
         );
-      }
-    });
+      },
+    );
   }
   runApp(const LuminhawApp());
+  if (SupabaseBackend.isInitialized) {
+    await SupabaseBackend.processPendingAuthLinks(
+      onPasswordResetError: () {
+        appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/update-password',
+          (_) => false,
+        );
+      },
+    );
+  }
   try {
     await refreshEnabledCareReminders();
   } catch (error, stackTrace) {

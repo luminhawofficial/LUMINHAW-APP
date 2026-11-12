@@ -875,7 +875,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
           ),
           const SizedBox(height: 20),
           PrimaryButton(
-            label: _isSending ? 'Sending…' : 'Send reset link',
+            label: _isSending ? 'Sending…' : 'Send Reset Link',
             onPressed: _isSending ? null : _sendResetLink,
           ),
           const SizedBox(height: 16),
@@ -899,6 +899,8 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
   bool _isSaving = false;
+  bool _showPassword = false;
+  bool _showConfirmation = false;
 
   @override
   void dispose() {
@@ -910,21 +912,26 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
   Future<void> _updatePassword() async {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
-    if (!SupabaseBackend.isInitialized ||
-        SupabaseBackend.client.auth.currentSession == null) {
+    if (!SupabaseAuthService.hasVerifiedPasswordRecoverySession) {
       _showMessage(
-        'Open the password reset link before setting a new password.',
+        'This password reset link is invalid, expired, or has already been used. Request a new link to continue.',
       );
+      setState(() {});
       return;
     }
 
     setState(() => _isSaving = true);
     try {
       await SupabaseAuthService.updatePassword(_password.text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your password has been successfully updated!'),
+        ),
+      );
       await SupabaseAuthService.signOut();
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-      }
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
     } on AuthException catch (error) {
       _showMessage(_sanitizeAuthError(error.message));
     } catch (error) {
@@ -948,47 +955,98 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
   @override
   Widget build(BuildContext context) {
     return ScreenBody(
-      title: 'Choose a new password',
+      title: 'Create New Password',
       subtitle: 'Set a new password for your LUMINHAW account.',
-      back: true,
-      child: Form(
-        key: _formKey,
-        child: Column(
-          children: [
-            TextFormField(
-              controller: _password,
-              obscureText: true,
-              validator: (value) => value == null || value.length < 8
-                  ? 'Use at least 8 characters'
-                  : null,
-              decoration: const InputDecoration(
-                labelText: 'New password',
-                border: OutlineInputBorder(),
+      child: SupabaseAuthService.hasVerifiedPasswordRecoverySession
+          ? Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _password,
+                    obscureText: !_showPassword,
+                    validator: (value) => value == null || value.length < 8
+                        ? 'Use at least 8 characters'
+                        : null,
+                    decoration: InputDecoration(
+                      labelText: 'New Password',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        onPressed: () =>
+                            setState(() => _showPassword = !_showPassword),
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _confirmation,
+                    obscureText: !_showConfirmation,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Confirm your new password';
+                      }
+                      return value != _password.text
+                          ? 'Passwords do not match'
+                          : null;
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Confirm New Password',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(
+                          () => _showConfirmation = !_showConfirmation,
+                        ),
+                        icon: Icon(
+                          _showConfirmation
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  if (_isSaving) ...[
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 12),
+                  ],
+                  PrimaryButton(
+                    label: _isSaving ? 'Updating…' : 'Update Password',
+                    onPressed: _isSaving ? null : _updatePassword,
+                  ),
+                ],
               ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'This password reset link is invalid, expired, or has already been used. Request a new link to continue.',
+                  style: TextStyle(color: AppColors.muted, height: 1.5),
+                ),
+                const SizedBox(height: 20),
+                PrimaryButton(
+                  label: 'Request a new reset link',
+                  onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/forgot',
+                    (_) => false,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/login',
+                    (_) => false,
+                  ),
+                  child: const Text('Back to login'),
+                ),
+              ],
             ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _confirmation,
-              obscureText: true,
-              validator: (value) =>
-                  value != _password.text ? 'Passwords do not match' : null,
-              decoration: const InputDecoration(
-                labelText: 'Confirm new password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-            PrimaryButton(
-              label: _isSaving ? 'Updating…' : 'Update password',
-              onPressed: _isSaving ? null : _updatePassword,
-            ),
-            if (!SupabaseBackend.isInitialized) ...[
-              const SizedBox(height: 16),
-              SetupNotice(message: SupabaseBackend.configurationMessage),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }

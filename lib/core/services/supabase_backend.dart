@@ -1,6 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart'
+    show
+        FlutterError,
+        FlutterErrorDetails,
+        VoidCallback,
+        kIsWeb,
+        visibleForTesting;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseBackend {
@@ -21,6 +29,24 @@ class SupabaseBackend {
   static Object? _initializationError;
   static Object? _sessionRestorationError;
   static Future<void>? _initialization;
+  static bool _passwordResetCallbackPending = false;
+  static bool _authLinkObserverStarted = false;
+  static bool _authClientReadyForLinks = false;
+  static final List<Uri> _queuedAuthLinks = [];
+  static VoidCallback? _onPasswordResetLinkError;
+
+  static const androidPasswordResetRedirectUri =
+      'com.luminhaw.plantcare://auth/reset-password';
+  static String get passwordResetRedirectUri => kIsWeb
+      ? Uri.base
+            .replace(
+              queryParameters: {
+                ...Uri.base.queryParameters,
+                'flow': 'password-reset',
+              },
+            )
+            .toString()
+      : androidPasswordResetRedirectUri;
 
   static String get _publicKey {
     if (_publishableKey.trim().isNotEmpty) return _publishableKey.trim();
@@ -35,6 +61,132 @@ class SupabaseBackend {
   static Object? get sessionRestorationError => _sessionRestorationError;
   static String get _authRedirectUri =>
       kIsWeb ? Uri.base.origin : 'com.luminhaw.plantcare://auth-callback';
+
+  static bool get hasPendingPasswordResetCallback =>
+      _passwordResetCallbackPending;
+
+  static bool consumePendingPasswordResetCallback() {
+    final wasPending = _passwordResetCallbackPending;
+    _passwordResetCallbackPending = false;
+    return wasPending;
+  }
+
+  static void startAuthLinkObserver() {
+    if (kIsWeb || _authLinkObserverStarted) return;
+    _authLinkObserverStarted = true;
+    AppLinks().uriLinkStream.listen(
+      (uri) {
+        if (_authClientReadyForLinks) {
+          unawaited(
+            _handleAuthCallback(
+              uri,
+              onPasswordResetError: _onPasswordResetLinkError,
+            ),
+          );
+        } else {
+          _queuedAuthLinks.add(uri);
+        }
+      },
+      onError: (Object _, StackTrace _) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: StateError('Could not receive an authentication link.'),
+            library: 'Supabase authentication links',
+          ),
+        );
+      },
+    );
+  }
+
+  static Future<void> processPendingAuthLinks({
+    required VoidCallback onPasswordResetError,
+  }) async {
+    if (!_initialized) return;
+    _authClientReadyForLinks = true;
+    _onPasswordResetLinkError = onPasswordResetError;
+
+    if (kIsWeb) {
+      final initialUri = await AppLinks().getInitialLink();
+      if (initialUri != null) {
+        await _handleAuthCallback(
+          initialUri,
+          onPasswordResetError: onPasswordResetError,
+        );
+      }
+    }
+
+    final queuedLinks = List<Uri>.of(_queuedAuthLinks);
+    _queuedAuthLinks.clear();
+    for (final uri in queuedLinks) {
+      await _handleAuthCallback(
+        uri,
+        onPasswordResetError: onPasswordResetError,
+      );
+    }
+  }
+
+  static Future<void> _handleAuthCallback(
+    Uri uri, {
+    VoidCallback? onPasswordResetError,
+  }) async {
+    if (!isSupportedAuthCallback(uri)) return;
+    final isPasswordReset = isPasswordResetCallback(uri);
+    try {
+      await client.auth.getSessionFromUrl(uri);
+    } catch (_, stackTrace) {
+      if (isPasswordReset) {
+        consumePendingPasswordResetCallback();
+        onPasswordResetError?.call();
+      }
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: StateError(
+            'The authentication link could not be completed.',
+          ),
+          stack: stackTrace,
+          library: 'Supabase authentication link',
+        ),
+      );
+    }
+  }
+
+  @visibleForTesting
+  static bool isPasswordResetCallback(Uri uri) =>
+      (uri.scheme == 'com.luminhaw.plantcare' &&
+          uri.host == 'auth' &&
+          uri.path == '/reset-password') ||
+      (kIsWeb &&
+          uri.origin == Uri.base.origin &&
+          uri.queryParameters['flow'] == 'password-reset');
+
+  @visibleForTesting
+  static bool isSupportedAuthCallback(Uri uri) {
+    final matchesEmailVerification =
+        uri.scheme == 'com.luminhaw.plantcare' && uri.host == 'auth-callback';
+    final matchesWebCallback = kIsWeb && uri.origin == Uri.base.origin;
+    if (!isPasswordResetCallback(uri) &&
+        !matchesEmailVerification &&
+        !matchesWebCallback) {
+      return false;
+    }
+
+    final fragmentParameters = Uri.splitQueryString(uri.fragment);
+    final hasAuthParameter =
+        uri.queryParameters.keys.any(_authCallbackParameters.contains) ||
+        fragmentParameters.keys.any(_authCallbackParameters.contains);
+    if (isPasswordResetCallback(uri) && hasAuthParameter) {
+      _passwordResetCallbackPending = true;
+    }
+    return hasAuthParameter;
+  }
+
+  static const _authCallbackParameters = {
+    'access_token',
+    'code',
+    'error',
+    'error_code',
+    'error_description',
+  };
 
   static String get configurationMessage {
     if (_initializationError != null) {
@@ -60,7 +212,9 @@ class SupabaseBackend {
         authFlowType: AuthFlowType.pkce,
         autoRefreshToken: true,
         persistSession: true,
+        detectSessionInUri: false,
       ),
+      debug: false,
     );
 
     final client = Supabase.instance.client;
@@ -138,20 +292,50 @@ class SupabaseAuthService {
   static Future<void> resetPassword(String email) =>
       SupabaseBackend.client.auth.resetPasswordForEmail(
         email.trim(),
-        redirectTo: SupabaseBackend._authRedirectUri,
+        redirectTo: SupabaseBackend.passwordResetRedirectUri,
       );
 
-  static Future<UserResponse> updatePassword(String password) => SupabaseBackend
-      .client
-      .auth
-      .updateUser(UserAttributes(password: password));
+  static String? _verifiedRecoveryUserId;
+
+  static bool get hasVerifiedPasswordRecoverySession {
+    final session = SupabaseBackend.isInitialized
+        ? SupabaseBackend.client.auth.currentSession
+        : null;
+    return session != null &&
+        !session.isExpired &&
+        session.user.id == _verifiedRecoveryUserId;
+  }
+
+  static void recordPasswordRecoverySession(Session? session) {
+    _verifiedRecoveryUserId = session != null && !session.isExpired
+        ? session.user.id
+        : null;
+    SupabaseBackend.consumePendingPasswordResetCallback();
+  }
+
+  static void clearPasswordRecoverySession() {
+    _verifiedRecoveryUserId = null;
+    SupabaseBackend.consumePendingPasswordResetCallback();
+  }
+
+  static Future<UserResponse> updatePassword(String password) {
+    if (!hasVerifiedPasswordRecoverySession) {
+      throw StateError('A verified password recovery session is required.');
+    }
+    return SupabaseBackend.client.auth.updateUser(
+      UserAttributes(password: password),
+    );
+  }
 
   static Future<UserResponse> updateProfileName(String name) => SupabaseBackend
       .client
       .auth
       .updateUser(UserAttributes(data: {'full_name': name.trim()}));
 
-  static Future<void> signOut() => SupabaseBackend.client.auth.signOut();
+  static Future<void> signOut() async {
+    clearPasswordRecoverySession();
+    await SupabaseBackend.client.auth.signOut();
+  }
 
   static Future<void> deleteAccount({required String password}) async {
     final client = SupabaseBackend.client;
