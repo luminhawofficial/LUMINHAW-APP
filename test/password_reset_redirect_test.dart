@@ -6,10 +6,14 @@ void main() {
     SupabaseBackend.consumePendingPasswordResetCallback();
   });
 
-  test('uses the Android application ID for password recovery', () {
+  test('uses the auth website and preserves the Android callback URI', () {
     expect(
       SupabaseBackend.androidPasswordResetRedirectUri,
       'com.luminhaw.plantcare://auth/reset-password',
+    );
+    expect(
+      SupabaseBackend.passwordResetRedirectUri,
+      'https://luminhawofficial.github.io/Administrator/',
     );
   });
 

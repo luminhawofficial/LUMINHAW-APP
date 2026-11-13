@@ -18,12 +18,19 @@ port = 55327
 port = 55324
 
 [auth]
+site_url = "https://luminhawofficial.github.io/Administrator/"
 additional_redirect_urls = [
+  "https://luminhawofficial.github.io/Administrator/",
+  "https://luminhawofficial.github.io/Administrator/**",
   "luminhaw://*",
   "luminhaw://auth/callback",
   "com.luminhaw.plantcare://auth-callback",
   "com.luminhaw.plantcare://auth/reset-password",
 ]
+
+[auth.email.template.confirmation]
+subject = "Verify your LUMINHAW account"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.recovery]
 subject = "Reset your LUMINHAW password"

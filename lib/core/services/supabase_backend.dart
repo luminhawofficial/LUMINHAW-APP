@@ -35,18 +35,11 @@ class SupabaseBackend {
   static final List<Uri> _queuedAuthLinks = [];
   static VoidCallback? _onPasswordResetLinkError;
 
+  static const authWebsiteRedirectUri =
+      'https://luminhawofficial.github.io/Administrator/';
   static const androidPasswordResetRedirectUri =
       'com.luminhaw.plantcare://auth/reset-password';
-  static String get passwordResetRedirectUri => kIsWeb
-      ? Uri.base
-            .replace(
-              queryParameters: {
-                ...Uri.base.queryParameters,
-                'flow': 'password-reset',
-              },
-            )
-            .toString()
-      : androidPasswordResetRedirectUri;
+  static String get passwordResetRedirectUri => authWebsiteRedirectUri;
 
   static String get _publicKey {
     if (_publishableKey.trim().isNotEmpty) return _publishableKey.trim();
@@ -59,8 +52,7 @@ class SupabaseBackend {
   static bool get isInitialized => _initialized;
   static Object? get initializationError => _initializationError;
   static Object? get sessionRestorationError => _sessionRestorationError;
-  static String get _authRedirectUri =>
-      kIsWeb ? Uri.base.origin : 'com.luminhaw.plantcare://auth-callback';
+  static String get _authRedirectUri => authWebsiteRedirectUri;
 
   static bool get hasPendingPasswordResetCallback =>
       _passwordResetCallbackPending;
