@@ -271,6 +271,13 @@ class SupabaseAuthService {
     }
   }
 
+  static Future<User?> refreshCurrentSession() async {
+    final auth = SupabaseBackend.client.auth;
+    if (auth.currentSession == null) return null;
+    final response = await auth.refreshSession();
+    return response.user ?? auth.currentUser;
+  }
+
   static Future<AuthResponse> signUp({
     required String name,
     required String email,
