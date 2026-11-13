@@ -360,7 +360,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     );
   }
   const paymentId = result.payment_request_id;
-  if (typeof paymentId === "string") {
+  if (actionToken.action === "reject" && typeof paymentId === "string") {
     const { data: notification } = await client
       .from("payment_email_notifications")
       .select("id")

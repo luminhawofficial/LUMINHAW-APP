@@ -75,6 +75,7 @@ declare
   v_payment public.premium_payment_requests%rowtype;
   v_notification public.user_notifications%rowtype;
   v_notification_count integer;
+  v_approval_email_count integer;
 begin
   select user_id into v_admin_id
   from public.admin_roles
@@ -217,9 +218,17 @@ begin
     or v_notification.message <>
       'Your payment has been successfully verified and approved. Your LUMINHAW Premium subscription is now active!'
         || E'\n\n'
-        || 'Enjoy your exclusive Premium features, advanced plant identification, plant health insights, and more. Thank you for choosing LUMINHAW!'
+        || 'Enjoy your exclusive Premium features, advanced plant identification, plant health insights, and more. Thank you for your support!'
   then
     raise exception 'Approval did not atomically activate the expected plan and notification.';
+  end if;
+
+  select count(*) into v_approval_email_count
+  from public.payment_email_notifications
+  where payment_request_id = v_payment_request_id
+    and notification_type = 'customer_payment_reviewed';
+  if v_approval_email_count <> 0 then
+    raise exception 'Premium approval unexpectedly queued a customer email.';
   end if;
 
   begin

@@ -123,18 +123,19 @@ Complete and record each gate before requesting production activation:
 2. **Verify Resend and payment review using controlled mailboxes.**
    - Configure a non-production API key and a sender verified by Resend.
      Send test messages only to controlled reviewer/customer mailboxes.
-   - Verify reviewer-only submission notifications, correct customer status
-     notifications, private receipt access, action-link expiry and single-use
-     behavior, retries/idempotency, and that opening a GET link does not
-     approve or reject a payment.
-   - Confirm approval/rejection notification failures remain retryable and
-     do not falsely report successful delivery.
+   - Verify reviewer-only submission notifications, rejection status emails,
+     and that Premium approval creates an in-app notification without queuing a
+     customer email. Also verify private receipt access, action-link expiry
+     and single-use behavior, retries/idempotency, and that opening a GET link
+     does not approve or reject a payment.
+   - Confirm email failures remain retryable and do not falsely report
+     successful delivery; approval notifications are delivered in-app.
 
 3. **Complete non-production end-to-end checkout tests.**
    - Use seeded test accounts, plans, QR assets and test payment records.
      Walk through readiness, plan/QR display, request creation, receipt
      upload, submission, review email, explicit approval and rejection,
-     retries, status polling, and customer notifications.
+     retries, status polling, and in-app Premium activation notification.
    - Verify pending/manual-review submissions never grant Premium; test an
      approved payment grants exactly 30 or 365 days and correctly extends an
      existing entitlement. Confirm rejected payments do not grant access.

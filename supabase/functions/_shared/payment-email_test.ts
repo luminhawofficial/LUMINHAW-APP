@@ -76,9 +76,12 @@ Deno.test("sent notifications are not retried; queued notifications are", () => 
     shouldAttemptPaymentNotification("pending") !== true ||
     shouldAttemptPaymentNotification("failed") !== true ||
     shouldAttemptPaymentNotification("sending") !== true ||
+    shouldAttemptPaymentNotification("suppressed") ||
     shouldAttemptPaymentNotification("unknown") !== false
   ) {
-    throw new Error("Email retries must skip sent and unknown states.");
+    throw new Error(
+      "Email retries must skip sent, suppressed, and unknown states.",
+    );
   }
 });
 

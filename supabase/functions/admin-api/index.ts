@@ -578,6 +578,13 @@ async function handleAdminRequest(
         return jsonResponse({ error: { code: "payment_review_failed" } }, 409);
       }
 
+      if (decision === "approve") {
+        return jsonResponse({
+          review,
+          notification: { status: "in_app" },
+        });
+      }
+
       const { data: notification, error: notificationError } = await context
         .client
         .from("payment_email_notifications")

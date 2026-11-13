@@ -317,6 +317,9 @@ export async function deliverPaymentNotification(
     return { delivered: false, errorCode: "notification_not_found" };
   }
   if (notification.delivery_status === "sent") return { delivered: true };
+  if (notification.delivery_status === "suppressed") {
+    return { delivered: false, errorCode: "notification_suppressed" };
+  }
   const mode = paymentEmailMode();
   const holdReason = paymentNotificationHoldReason(
     notification.notification_type,
