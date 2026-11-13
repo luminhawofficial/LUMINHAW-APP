@@ -434,7 +434,13 @@ class PremiumPaymentService {
         'Payment services are not configured on this app.',
       );
     }
-    final user = SupabaseAuthService.currentUser;
+    var user = SupabaseAuthService.currentUser;
+    if (user != null &&
+        user.emailConfirmedAt == null &&
+        SupabaseBackend.client.auth.currentSession != null) {
+      await SupabaseAuthService.refreshCurrentSession();
+      user = SupabaseAuthService.currentUser;
+    }
     if (user == null || user.emailConfirmedAt == null) {
       throw const PremiumPaymentException(
         'Sign in with a verified email to use Premium payments.',
