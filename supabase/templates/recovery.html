@@ -1,8 +1,52 @@
-<h2>Reset your LUMINHAW password</h2>
-<p>We received a request to change the password for your LUMINHAW account.</p>
-<p>
-  <a href="{{ .SiteURL }}?token_hash={{ .TokenHash }}&amp;type=recovery">
-    Choose a new password
-  </a>
-</p>
-<p>If you did not request a password reset, you can ignore this email.</p>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUMINHAW Password Reset</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#F4F9F4;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:40px 20px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+            <tr>
+              <td align="center" style="background:linear-gradient(135deg,#2E7D32,#4CAF50);padding:35px 20px;">
+                <h1 style="margin:0;color:#ffffff;font-size:30px;">LUMINHAW</h1>
+                <p style="margin:10px 0 0;color:#E8F5E9;font-size:16px;">Illuminating the Way to a Greener Tomorrow</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:40px;color:#333333;line-height:1.7;">
+                <h2 style="margin-top:0;color:#2E7D32;">Reset Your Password</h2>
+                <p>Hello Plant Lover,</p>
+                <p>We received a request to reset the password for your <strong>Luminhaw</strong> account.</p>
+                <p>Use the button below to choose a new password and regain access to your account.</p>
+                <p style="margin:35px 0;text-align:center;">
+                  <a
+                    href="{{ .SiteURL }}?token_hash={{ .TokenHash }}&amp;type=recovery"
+                    style="display:inline-block;padding:15px 34px;border-radius:8px;background:#2E7D32;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;"
+                  >Reset My Password</a>
+                </p>
+                <p>If you did not request a password reset, you can safely ignore this email. Your account will remain secure and no changes will be made.</p>
+                <p>For your security, this password reset link will expire after a limited time.</p>
+                <p>Thank you for choosing <strong>Luminhaw</strong> to help you grow healthier plants.</p>
+                <p style="margin-top:40px;">
+                  Warm regards,<br>
+                  <strong>The Luminhaw Team</strong><br>
+                  <em>Illuminating the Way to a Greener Tomorrow</em>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px;background:#F1F8F2;color:#777777;font-size:13px;">
+                © 2026 Luminhaw. All rights reserved.<br>
+                Helping every plant grow greener, one leaf at a time.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
