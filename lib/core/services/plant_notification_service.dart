@@ -3,11 +3,44 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plant_care_recommendations.dart';
-import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
+
+class PremiumActivationNotification {
+  const PremiumActivationNotification({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String message;
+  final DateTime createdAt;
+
+  factory PremiumActivationNotification.fromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final title = json['title'];
+    final message = json['message'];
+    final createdAt = json['created_at'];
+    if (id is! String ||
+        title is! String ||
+        message is! String ||
+        createdAt is! String) {
+      throw const FormatException('Premium notification data is invalid.');
+    }
+    return PremiumActivationNotification(
+      id: id,
+      title: title,
+      message: message,
+      createdAt: DateTime.parse(createdAt),
+    );
+  }
+}
 
 class SystemAnnouncement {
   const SystemAnnouncement({
@@ -214,7 +247,6 @@ class PlantNotificationService {
     final dismissed =
         preferences.getStringList('$_dismissedAnnouncementPrefix$userId') ??
         const <String>[];
-    final isPremium = PlanEntitlementStore.instance.hasPremiumAccess;
     final rows = await SupabaseBackend.client
         .from('system_announcements')
         .select(
@@ -229,14 +261,53 @@ class PlantNotificationService {
         .map(
           (row) => SystemAnnouncement.fromJson(Map<String, dynamic>.from(row)),
         )
-        .where(
-          (announcement) =>
-              !dismissed.contains(announcement.id) &&
-              (announcement.audience == 'all' ||
-                  (announcement.audience == 'premium' && isPremium) ||
-                  (announcement.audience == 'free' && !isPremium)),
+        .where((announcement) => !dismissed.contains(announcement.id))
+        .toList(growable: false);
+  }
+
+  Future<List<PremiumActivationNotification>> loadPremiumNotifications() async {
+    if (!SupabaseBackend.isInitialized) {
+      throw StateError(SupabaseBackend.configurationMessage);
+    }
+    final userId = SupabaseAuthService.currentUser?.id;
+    if (userId == null) return const [];
+
+    final rows = await SupabaseBackend.client
+        .from('user_notifications')
+        .select('id, title, message, created_at')
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(30);
+    return rows
+        .map(
+          (row) => PremiumActivationNotification.fromJson(
+            Map<String, dynamic>.from(row),
+          ),
         )
         .toList(growable: false);
+  }
+
+  RealtimeChannel watchPremiumNotifications({
+    required String userId,
+    required VoidCallback onInsert,
+  }) {
+    if (!SupabaseBackend.isInitialized) {
+      throw StateError(SupabaseBackend.configurationMessage);
+    }
+    return SupabaseBackend.client
+        .channel('premium-notifications-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'user_notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) => onInsert(),
+        )
+        .subscribe();
   }
 
   Future<void> dismissAnnouncement(String announcementId) async {

@@ -22,6 +22,7 @@ import 'package:luminhaw/features/settings/settings_page.dart';
 import 'package:luminhaw/features/settings/saved_plant_details_page.dart';
 import 'package:luminhaw/features/subscription/subscription_pages.dart';
 import 'package:luminhaw/features/subscription/premium_payment_page.dart';
+import 'package:luminhaw/features/admin/admin_payment_review_page.dart';
 
 class LuminhawRouter {
   LuminhawRouter._();
@@ -71,6 +72,7 @@ class LuminhawRouter {
     ),
     '/premium': _assistantOverlay((_) => const PremiumPage()),
     '/payment': _assistantOverlay((_) => const PremiumPaymentPage()),
+    '/admin/payments': (_) => const AdminPaymentReviewPage(),
     '/ai-history': _assistantOverlay((_) => const AiSearchHistoryPage()),
     '/assistant': (context) =>
         AssistantPage(conversationId: _conversationArgument(context)),

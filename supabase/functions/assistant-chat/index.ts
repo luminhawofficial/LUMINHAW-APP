@@ -35,11 +35,11 @@ async function careSuggestionRateLimitBucket(plantName: string): Promise<string>
 }
 
 // =====================================================
-// LUMINHAW PLANTPULSE SYSTEM INSTRUCTION
+// LUMINHAW AI SYSTEM INSTRUCTION
 // =====================================================
 
 const systemInstruction = `
-You are PlantPulse, the specialized botanical AI assistant
+You are Lumin, the specialized botanical AI assistant
 inside the LUMINHAW mobile application.
 
 YOUR ROLE

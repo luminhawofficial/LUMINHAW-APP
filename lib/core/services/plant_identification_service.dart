@@ -60,6 +60,11 @@ class PlantIdentificationResult {
   final String? enrichmentGeneratedAt;
   final String? enrichmentError;
 
+  static const lowConfidenceThreshold = 0.6;
+
+  bool get hasLowConfidence =>
+      probability != null && probability! < lowConfidenceThreshold;
+
   PlantRecord toPlantRecord() => PlantRecord(
     commonName: commonName ?? scientificName,
     scientificName: scientificName,
@@ -281,15 +286,17 @@ class PlantIdentificationService {
       );
     }
 
-    final suggestion = _asMap(suggestions.first);
-    final name = _nonEmptyString(suggestion?['name']);
+    final suggestion = _bestSuggestion(suggestions);
+    final details = _asMap(suggestion?['details']);
+    final name =
+        _nonEmptyString(suggestion?['name']) ??
+        _nonEmptyString(details?['scientific_name']);
     if (name == null) {
       throw const FormatException(
         'The service returned a suggestion without a plant name.',
       );
     }
 
-    final details = _asMap(suggestion?['details']);
     final taxonomy = _asMap(details?['taxonomy']);
     final localizedNames = _asMap(payload['localizedNames']);
     final enrichment = _asMap(payload['plantEnrichment']);
@@ -345,16 +352,14 @@ class PlantIdentificationService {
     for (final field in unavailableFields) {
       informationStatuses.putIfAbsent(field, () => 'Unavailable');
     }
-    final probability = suggestion?['probability'];
+    final probability = _validProbability(suggestion?['probability']);
     return PlantIdentificationResult(
       scanId: scanId,
       name: name,
       commonName: commonName,
       scientificName: _nonEmptyString(details?['scientific_name']) ?? name,
       family: _nonEmptyString(taxonomy?['family']) ?? 'Not listed',
-      probability: probability is num && probability.isFinite
-          ? probability.toDouble()
-          : null,
+      probability: probability,
       imageBytes: imageBytes,
       tagalogName: tagalogName,
       bisayaName: bisayaName,
@@ -378,6 +383,32 @@ class PlantIdentificationService {
 
   static Map<String, dynamic>? _asMap(Object? value) =>
       value is Map ? Map<String, dynamic>.from(value) : null;
+
+  static Map<String, dynamic>? _bestSuggestion(List suggestions) {
+    Map<String, dynamic>? best;
+    double? bestProbability;
+    for (final item in suggestions) {
+      final candidate = _asMap(item);
+      final details = _asMap(candidate?['details']);
+      if (_nonEmptyString(candidate?['name']) == null &&
+          _nonEmptyString(details?['scientific_name']) == null) {
+        continue;
+      }
+      final probability = _validProbability(candidate?['probability']);
+      if (best == null ||
+          (probability != null &&
+              (bestProbability == null || probability > bestProbability))) {
+        best = candidate;
+        bestProbability = probability;
+      }
+    }
+    return best;
+  }
+
+  static double? _validProbability(Object? value) =>
+      value is num && value.isFinite && value >= 0 && value <= 1
+      ? value.toDouble()
+      : null;
 
   static String? _firstString(Object? value) {
     if (value is! List) return null;

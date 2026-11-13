@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
@@ -8,6 +10,7 @@ import 'package:luminhaw/core/services/premium_payment_service.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -28,24 +31,67 @@ class _NotificationsPageState extends State<NotificationsPage>
   final _store = LocalPlantDataStore.instance;
   List<CareRecommendation> _careReminders = const [];
   List<SystemAnnouncement> _announcements = const [];
+  List<PremiumActivationNotification> _premiumNotifications = const [];
   List<PremiumPaymentRecord> _payments = const [];
   Object? _careError;
   Object? _announcementError;
+  Object? _premiumNotificationError;
   Object? _paymentError;
   bool _isLoading = true;
   bool _careRemindersEnabled = false;
+  RealtimeChannel? _premiumNotificationChannel;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _subscribeToPremiumNotifications();
     _loadNotifications();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final channel = _premiumNotificationChannel;
+    if (channel != null) {
+      unawaited(_removePremiumNotificationChannel(channel));
+    }
     super.dispose();
+  }
+
+  void _subscribeToPremiumNotifications() {
+    final userId = SupabaseAuthService.currentUser?.id;
+    if (userId == null || !SupabaseBackend.isInitialized) return;
+    _premiumNotificationChannel = PlantNotificationService.instance
+        .watchPremiumNotifications(
+          userId: userId,
+          onInsert: () => unawaited(_loadPremiumNotifications()),
+        );
+  }
+
+  Future<void> _removePremiumNotificationChannel(
+    RealtimeChannel channel,
+  ) async {
+    try {
+      await SupabaseBackend.client.removeChannel(channel);
+    } catch (error) {
+      debugPrint('Notification realtime cleanup failed: $error');
+    }
+  }
+
+  Future<void> _loadPremiumNotifications() async {
+    try {
+      final notifications = await PlantNotificationService.instance
+          .loadPremiumNotifications();
+      if (!mounted) return;
+      setState(() {
+        _premiumNotifications = notifications;
+        _premiumNotificationError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _premiumNotificationError = error);
+    }
   }
 
   @override
@@ -60,6 +106,7 @@ class _NotificationsPageState extends State<NotificationsPage>
       _isLoading = true;
       _careError = null;
       _announcementError = null;
+      _premiumNotificationError = null;
       _paymentError = null;
     });
     try {
@@ -106,6 +153,12 @@ class _NotificationsPageState extends State<NotificationsPage>
           .loadAnnouncements();
     } catch (error) {
       _announcementError = error;
+    }
+    try {
+      _premiumNotifications = await PlantNotificationService.instance
+          .loadPremiumNotifications();
+    } catch (error) {
+      _premiumNotificationError = error;
     }
     final user = SupabaseAuthService.currentUser;
     if (user == null || user.emailConfirmedAt == null) {
@@ -202,6 +255,14 @@ class _NotificationsPageState extends State<NotificationsPage>
                   )
                 else
                   _PaymentNotices(payments: _payments),
+                if (_premiumNotificationError case final error?)
+                  SetupNotice(
+                    message:
+                        'Premium notifications could not be loaded: $error',
+                  )
+                else
+                  for (final notification in _premiumNotifications)
+                    _PremiumActivationNotice(notification: notification),
                 const SizedBox(height: 20),
                 _sectionTitle('System announcements'),
                 if (_announcementError case final error?)
@@ -358,6 +419,46 @@ class _PaymentNoticeCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _PremiumActivationNotice extends StatelessWidget {
+  const _PremiumActivationNotice({required this.notification});
+
+  final PremiumActivationNotification notification;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.celebration_outlined, color: AppColors.green),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  notification.title,
+                  style: const TextStyle(
+                    color: AppColors.green,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(notification.message),
+          const SizedBox(height: 8),
+          Text(
+            _announcementDate(notification.createdAt),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 String _paymentStatusTitle(String status) => switch (status) {

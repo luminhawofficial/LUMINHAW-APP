@@ -6,7 +6,9 @@ import { authenticatedUserId, enforceRateLimit } from "./auth.ts";
 import { jsonResponse } from "./http.ts";
 
 export const PAYMENT_PROOF_BUCKET = "premium-payment-proofs";
-export const OCR_SPACE_MANUAL_REVIEW_SUPPORTED = true;
+export const RESEND_DEVELOPMENT_SENDER = "LUMINHAW <onboarding@resend.dev>";
+
+export type PaymentEmailMode = "development" | "production";
 
 export const REQUIRED_GCASH_PLANS = [
   {
@@ -38,8 +40,6 @@ export type GcashPaymentPlan = {
 
 export type PaymentReadinessInput = {
   configurationIssues: readonly string[];
-  receiptValidationConfigured: boolean;
-  receiptValidationManualReviewSupported: boolean;
   plans: readonly GcashPaymentPlan[];
   unavailableQrPlanCodes?: readonly string[];
 };
@@ -59,12 +59,6 @@ export function paymentReadinessIssues(
   input: PaymentReadinessInput,
 ): string[] {
   const issues = [...input.configurationIssues];
-  if (
-    input.receiptValidationConfigured &&
-    !input.receiptValidationManualReviewSupported
-  ) {
-    issues.push("receipt_validation_manual_review_unsupported");
-  }
 
   for (const expected of REQUIRED_GCASH_PLANS) {
     const prefix = expected.readinessPrefix;
@@ -113,19 +107,105 @@ export function paymentConfigurationIssues(
   if (!getEnv("RESEND_API_KEY")?.trim()) {
     issues.push("resend_api_key_missing");
   }
-  if (
-    !getEnv("RESEND_FROM_EMAIL")?.trim() &&
-    !getEnv("PREMIUM_EMAIL_FROM")?.trim()
-  ) {
-    issues.push("resend_sender_missing");
-  }
+  issues.push(...paymentEmailConfigurationIssues(getEnv));
   if (!getEnv("SUPABASE_URL")?.trim()) {
     issues.push("supabase_url_missing");
   }
-  if (!getEnv("OCR_SPACE_API_KEY")?.trim()) {
-    issues.push("receipt_validation_not_configured");
+  return issues;
+}
+
+export function paymentEmailConfigurationIssues(
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+): string[] {
+  const issues: string[] = [];
+  const rawMode = getEnv("RESEND_EMAIL_MODE")?.trim().toLowerCase();
+  const mode = paymentEmailMode(getEnv);
+  if (!rawMode) {
+    issues.push("resend_email_mode_missing");
+  } else if (!mode) {
+    issues.push("resend_email_mode_invalid");
+  }
+  if (mode === "development") {
+    const testRecipient = getEnv("RESEND_TEST_RECIPIENT")?.trim();
+    if (!testRecipient) {
+      issues.push("resend_test_recipient_missing");
+    } else if (!isEmailAddress(testRecipient)) {
+      issues.push("resend_test_recipient_invalid");
+    }
+    return issues;
+  }
+  if (mode !== "production") return issues;
+
+  const resendSender = getEnv("RESEND_FROM_EMAIL")?.trim();
+  const premiumSender = getEnv("PREMIUM_EMAIL_FROM")?.trim();
+  const verifiedDomain = getEnv("RESEND_VERIFIED_DOMAIN")?.trim()
+    .replace(/^\.+|\.+$/g, "").toLowerCase();
+  const sender = paymentEmailSender(getEnv);
+  const configuredSender = resendSender || premiumSender;
+
+  if (!resendSender && !premiumSender) {
+    issues.push("resend_sender_missing");
+  } else if (resendSender && premiumSender && resendSender !== premiumSender) {
+    issues.push("resend_sender_configuration_conflict");
+  }
+  if (!verifiedDomain) {
+    issues.push("resend_verified_domain_missing");
+  } else if (!sender && configuredSender) {
+    const senderAddress = configuredSender.match(/<([^<>]+)>/)?.[1] ??
+      configuredSender;
+    const senderDomain = senderAddress.split("@").at(-1)?.toLowerCase();
+    issues.push(
+      senderDomain && senderDomain !== verifiedDomain
+        ? "resend_sender_domain_mismatch"
+        : "resend_sender_invalid",
+    );
+  } else if (sender) {
+    const senderAddress = sender.match(/<([^<>]+)>/)?.[1] ?? sender;
+    const senderDomain = senderAddress.split("@").at(-1)?.toLowerCase();
+    if (!senderDomain || senderDomain !== verifiedDomain) {
+      issues.push("resend_sender_domain_mismatch");
+    }
+  }
+
+  const appUrl = parseLuminhawAppUrl(getEnv("LUMINHAW_APP_URL"));
+  if (!getEnv("LUMINHAW_APP_URL")?.trim()) {
+    issues.push("luminhaw_app_url_missing");
+  } else if (!appUrl) {
+    issues.push("luminhaw_app_url_invalid");
   }
   return issues;
+}
+
+export function paymentEmailMode(
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+): PaymentEmailMode | null {
+  const mode = getEnv("RESEND_EMAIL_MODE")?.trim().toLowerCase();
+  return mode === "development" || mode === "production" ? mode : null;
+}
+
+export function paymentEmailTestRecipient(
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+): string | null {
+  if (paymentEmailMode(getEnv) !== "development") return null;
+  const recipient = getEnv("RESEND_TEST_RECIPIENT")?.trim();
+  return recipient && isEmailAddress(recipient) ? recipient : null;
+}
+
+export function parseLuminhawAppUrl(value: string | undefined): URL | null {
+  if (!value?.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    if (
+      url.protocol !== "https:" || url.username || url.password ||
+      url.search || url.hash
+    ) {
+      return null;
+    }
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/`;
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 export function missingPaymentServiceVariables(
@@ -206,10 +286,35 @@ export function gcashConfiguration(): GcashConfiguration | null {
   return gcashMerchantConfiguration();
 }
 
-export function paymentEmailSender(): string | null {
-  const sender = Deno.env.get("PREMIUM_EMAIL_FROM")?.trim() ||
-    Deno.env.get("RESEND_FROM_EMAIL")?.trim();
-  return sender || null;
+export function paymentEmailSender(
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+): string | null {
+  const mode = paymentEmailMode(getEnv);
+  if (mode === "development") return RESEND_DEVELOPMENT_SENDER;
+  if (mode !== "production") return null;
+
+  const resendSender = getEnv("RESEND_FROM_EMAIL")?.trim();
+  const premiumSender = getEnv("PREMIUM_EMAIL_FROM")?.trim();
+  const verifiedDomain = getEnv("RESEND_VERIFIED_DOMAIN")?.trim()
+    .replace(/^\.+|\.+$/g, "").toLowerCase();
+  if (resendSender && premiumSender && resendSender !== premiumSender) {
+    return null;
+  }
+  const sender = resendSender || premiumSender;
+  if (
+    !sender || !verifiedDomain || /[\r\n]/.test(sender) ||
+    !/^(?:[^<>]*<)?[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>?$/.test(sender)
+  ) {
+    return null;
+  }
+  const senderAddress = sender.match(/<([^<>]+)>/)?.[1] ?? sender;
+  const senderDomain = senderAddress.split("@").at(-1)?.toLowerCase();
+  if (senderDomain !== verifiedDomain) return null;
+  return `LUMINHAW <${senderAddress}>`;
+}
+
+function isEmailAddress(value: string): boolean {
+  return /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(value);
 }
 
 export function isUuid(value: unknown): value is string {

@@ -30,6 +30,7 @@ class PlantRecord {
     this.aiGeneratedFields = const {},
     this.plantingDate,
     this.growthStage,
+    this.initialObservation,
     this.isSaved = false,
     this.isVerified = false,
   });
@@ -74,6 +75,7 @@ class PlantRecord {
       aiGeneratedFields: _storedStringSet(details?['aiGeneratedFields']),
       plantingDate: optionalString('plantingDate'),
       growthStage: optionalString('growthStage'),
+      initialObservation: optionalString('initialObservation'),
       isSaved: true,
       isVerified: details?['isVerified'] == true,
     );
@@ -109,6 +111,7 @@ class PlantRecord {
   final Set<String> aiGeneratedFields;
   final String? plantingDate;
   final String? growthStage;
+  final String? initialObservation;
   final bool isSaved;
   final bool isVerified;
 
@@ -142,6 +145,7 @@ class PlantRecord {
     'aiGeneratedFields': aiGeneratedFields.toList(),
     'plantingDate': plantingDate,
     'growthStage': growthStage,
+    'initialObservation': initialObservation,
     'isVerified': isVerified,
   };
 

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src https://*.supabase.co; base-uri 'none'; form-action 'self'; object-src 'none'">
+  <title>LUMINHAW payment review</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #174d3c; background: #eef7eb; }
+    body { margin: 0; padding: 24px; }
+    main { box-sizing: border-box; max-width: 600px; margin: 6vh auto; padding: 24px; border-radius: 16px; background: #fff; box-shadow: 0 8px 32px #174d3c18; }
+    h1 { font-size: 1.5rem; }
+    p { line-height: 1.5; }
+    dl { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr; gap: 8px 16px; }
+    dt { font-weight: 700; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    label { display: block; margin: 18px 0; }
+    textarea { box-sizing: border-box; width: 100%; min-height: 110px; margin-top: 8px; padding: 10px; font: inherit; }
+    button { border: 0; border-radius: 10px; padding: 12px 18px; background: #086044; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    [hidden] { display: none !important; }
+  </style>
+  <script src="payment-action.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1 id="title">LUMINHAW payment review</h1>
+    <p id="status" role="status" aria-live="polite">Checking this secure payment link…</p>
+    <section id="payment-details" hidden>
+      <h2>Payment details</h2>
+      <dl id="details-list"></dl>
+      <p id="instruction"></p>
+      <form id="decision-form" hidden>
+        <div id="confirmation-field"></div>
+        <button id="submit-button" type="submit">Confirm decision</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

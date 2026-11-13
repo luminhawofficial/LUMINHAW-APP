@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
@@ -5,6 +7,7 @@ import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plant_enrichment_service.dart';
 import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/features/garden/add_garden_plant_page.dart';
+import 'package:luminhaw/features/garden/garden_page.dart';
 import 'package:luminhaw/features/library/library_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,6 +59,7 @@ void main() {
     expect(searched, 'Kapayas');
     expect(find.text('Library'), findsOneWidget);
     expect(find.text('Papaya'), findsOneWidget);
+    expect(find.text('No photo available'), findsOneWidget);
     expect(find.text('Tagalog: Papaya'), findsOneWidget);
     expect(find.text('Cebuano/Bisaya: Kapayas'), findsOneWidget);
     expect(store.gardenPlantNames.value, isEmpty);
@@ -146,7 +150,32 @@ void main() {
       store.gardenPlantDetails.value['Papaya']?['growthStage'],
       'Seedling',
     );
+    expect(
+      store.gardenPlantDetails.value['Papaya']?['initialObservation'],
+      'First observation',
+    );
     expect(store.growthEntries.value.single.heightCm, 24);
     expect(store.growthEntries.value.single.notes, 'First observation');
+  });
+
+  testWidgets('Garden cards show the saved initial observation', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'local_garden_plant_names': ['Papaya'],
+      'local_garden_plant_details': jsonEncode({
+        'Papaya': {'initialObservation': 'First observation'},
+      }),
+    });
+    final store = LocalPlantDataStore.instance;
+    store.retryLoad();
+    await store.load();
+
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: GardenPage())),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Initial observation: First observation'), findsOneWidget);
   });
 }

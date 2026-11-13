@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,8 +9,8 @@ import 'package:luminhaw/core/services/gemini_assistant_service.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plant_care_recommendations.dart';
 import 'package:luminhaw/core/services/plant_notification_service.dart';
-import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/core/widgets/growth_entry_photo.dart';
 
 class GrowthTrackerPage extends StatefulWidget {
   const GrowthTrackerPage({super.key, this.plant, this.store});
@@ -750,79 +749,18 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
   }
 }
 
-class _GrowthEntryPhoto extends StatefulWidget {
+class _GrowthEntryPhoto extends StatelessWidget {
   const _GrowthEntryPhoto({required this.entry});
 
   final GrowthEntry entry;
 
   @override
-  State<_GrowthEntryPhoto> createState() => _GrowthEntryPhotoState();
-}
-
-class _GrowthEntryPhotoState extends State<_GrowthEntryPhoto> {
-  late Future<String?> _photoUrl = _loadPhotoUrl();
-
-  @override
-  void didUpdateWidget(covariant _GrowthEntryPhoto oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.entry.photoPath != widget.entry.photoPath) {
-      _photoUrl = _loadPhotoUrl();
-    }
-  }
-
-  Future<String?> _loadPhotoUrl() async {
-    final path = widget.entry.photoPath;
-    final user = SupabaseAuthService.currentUser;
-    if (path == null ||
-        user == null ||
-        !path.startsWith('${user.id}/growth/')) {
-      return null;
-    }
-    return SupabaseBackend.client.storage
-        .from('plant-photos')
-        .createSignedUrl(path, 60 * 60);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final photoData = widget.entry.photoDataBase64;
-    if (photoData != null) {
-      try {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.memory(
-            base64Decode(photoData),
-            height: 96,
-            width: 120,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) =>
-                const SizedBox.shrink(),
-          ),
-        );
-      } on FormatException {
-        return const SizedBox.shrink();
-      }
-    }
-
-    return FutureBuilder<String?>(
-      future: _photoUrl,
-      builder: (context, snapshot) {
-        final url = snapshot.data;
-        if (url == null || url.isEmpty) return const SizedBox.shrink();
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.network(
-            url,
-            height: 96,
-            width: 120,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) =>
-                const SizedBox.shrink(),
-          ),
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => GrowthEntryPhoto(
+    entry: entry,
+    width: double.infinity,
+    height: 180,
+    borderRadius: 12,
+  );
 }
 
 class AddGrowthEntryPage extends StatefulWidget {

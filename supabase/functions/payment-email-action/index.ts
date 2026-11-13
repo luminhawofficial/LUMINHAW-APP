@@ -1,4 +1,8 @@
-import { isResponse, paymentServiceClient } from "../_shared/payments.ts";
+import {
+  isResponse,
+  parseLuminhawAppUrl,
+  paymentServiceClient,
+} from "../_shared/payments.ts";
 import { deliverPaymentNotification } from "../_shared/payment-email.ts";
 import {
   hashPaymentEmailToken,
@@ -15,6 +19,33 @@ const pageHeaders = {
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
 };
+const jsonSecurityHeaders = {
+  "cache-control": "no-store, max-age=0",
+  "content-type": "application/json; charset=utf-8",
+  "referrer-policy": "no-referrer",
+  "x-content-type-options": "nosniff",
+};
+
+function isLuminhawOrigin(request: Request): boolean {
+  const configuredUrl = parseLuminhawAppUrl(
+    Deno.env.get("LUMINHAW_APP_URL"),
+  );
+  return configuredUrl !== null &&
+    request.headers.get("origin") === configuredUrl.origin;
+}
+
+function jsonResponse(
+  request: Request,
+  body: Record<string, unknown>,
+  status = 200,
+): Response {
+  const headers = new Headers(jsonSecurityHeaders);
+  if (isLuminhawOrigin(request)) {
+    headers.set("access-control-allow-origin", request.headers.get("origin")!);
+    headers.set("vary", "Origin");
+  }
+  return Response.json(body, { status, headers });
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (character) =>
@@ -82,11 +113,37 @@ async function tokenRateLimitKey(tokenHash: string): Promise<string> {
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {
+  if (request.method === "OPTIONS") {
+    if (!isLuminhawOrigin(request)) {
+      return new Response(null, { status: 403, headers: pageHeaders });
+    }
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...jsonSecurityHeaders,
+        "access-control-allow-origin": request.headers.get("origin")!,
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type",
+        "access-control-max-age": "600",
+        vary: "Origin",
+      },
+    });
+  }
+  const isJsonPost = request.method === "POST" &&
+    request.headers.get("content-type")?.toLowerCase().includes(
+        "application/json",
+      ) === true;
   if (request.method !== "GET" && request.method !== "POST") {
     return new Response("Method not allowed", {
       status: 405,
-      headers: { ...pageHeaders, allow: "GET, POST" },
+      headers: {
+        ...pageHeaders,
+        allow: "GET, POST, OPTIONS",
+      },
     });
+  }
+  if (isJsonPost && !isLuminhawOrigin(request)) {
+    return jsonResponse(request, { error: "origin_not_allowed" }, 403);
   }
   const client = paymentServiceClient();
   if (isResponse(client)) {
@@ -124,93 +181,37 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
 
   let formData: FormData | null = null;
+  let requestBody: Record<string, unknown> | null = null;
   if (request.method === "POST") {
-    try {
-      formData = await request.formData();
-    } catch {
-      return invalidPage();
+    if (isJsonPost) {
+      try {
+        const body: unknown = await request.json();
+        requestBody = body && typeof body === "object"
+          ? body as Record<string, unknown>
+          : null;
+      } catch {
+        return jsonResponse(request, { error: "invalid_request" }, 400);
+      }
+    } else {
+      try {
+        formData = await request.formData();
+      } catch {
+        return invalidPage();
+      }
     }
   }
   const token = requestToken(
     request,
-    formData?.get("token")?.toString(),
+    isJsonPost
+      ? typeof requestBody?.token === "string" ? requestBody.token : ""
+      : formData?.get("token")?.toString(),
   );
-  if (!token) return invalidPage();
+  if (!token) {
+    return isJsonPost
+      ? jsonResponse(request, { error: "invalid_or_expired_action" }, 400)
+      : invalidPage();
+  }
   const hash = await hashPaymentEmailToken(token);
-  const { data: actionToken, error: tokenError } = await client
-    .from("payment_email_action_tokens")
-    .select(
-      "payment_request_id, action, reviewer_email, expires_at, consumed_at, revoked_at",
-    )
-    .eq("token_hash", hash)
-    .maybeSingle();
-  if (tokenError) {
-    console.error("Email payment action lookup failed:", tokenError.code);
-    return page(
-      "Payment action unavailable",
-      "The payment service is temporarily unavailable. Please try again later.",
-    );
-  }
-  if (
-    !actionToken ||
-    actionToken.reviewer_email !== reviewerEmail ||
-    !isPaymentEmailActionTokenActive(actionToken)
-  ) {
-    return invalidPage();
-  }
-
-  if (request.method === "GET") {
-    const { data: payment, error } = await client
-      .from("premium_payment_requests")
-      .select(
-        "id, amount_centavos, currency, merchant_transaction_reference, payment_date, payment_time, ocr_reference_number, ocr_transaction_date, ocr_transaction_time, ocr_amount_centavos, ocr_recipient, ocr_transaction_status, ocr_status, payment_status, customer_full_name, payment_plans(name)",
-      )
-      .eq("id", actionToken.payment_request_id)
-      .maybeSingle();
-    if (error || !payment || payment.payment_status !== "under_review") {
-      return invalidPage();
-    }
-    const plan = payment.payment_plans;
-    const planName = plan && typeof plan === "object" && "name" in plan
-      ? plan.name
-      : "Premium";
-    const ocrAmount = typeof payment.ocr_amount_centavos === "number"
-      ? `${escapeHtml(payment.currency)} ${
-        (payment.ocr_amount_centavos / 100).toFixed(2)
-      }`
-      : "Not detected";
-    const details = `<p>Customer: ${
-      escapeHtml(payment.customer_full_name)
-    }<br>Plan: ${escapeHtml(planName)}<br>Amount: ${
-      escapeHtml(payment.currency)
-    } ${(payment.amount_centavos / 100).toFixed(2)}<br>Reference: ${
-      escapeHtml(payment.merchant_transaction_reference)
-    }<br>Entered payment date/time: ${escapeHtml(payment.payment_date)} ${
-      escapeHtml(payment.payment_time)
-    }<br>OCR date/time: ${escapeHtml(payment.ocr_transaction_date)} ${
-      escapeHtml(payment.ocr_transaction_time)
-    }<br>OCR result: ${escapeHtml(payment.ocr_status)}<br>OCR reference: ${
-      escapeHtml(payment.ocr_reference_number)
-    }<br>OCR amount: ${ocrAmount}<br>OCR transaction status: ${
-      escapeHtml(payment.ocr_transaction_status)
-    }<br>OCR recipient: ${escapeHtml(payment.ocr_recipient)}</p>`;
-    const isApproval = actionToken.action === "approve";
-    const confirmation = isApproval
-      ? `<label><input type="checkbox" name="confirm_received" value="true" required> I verified that this exact transaction was received in the official GCash account.</label><button type="submit">Confirm payment approval</button>`
-      : `<label for="reason">Reason for rejection</label><textarea id="reason" name="rejection_reason" maxlength="1000" required></textarea><button type="submit">Confirm payment rejection</button>`;
-    const form =
-      `<form method="post" action="/functions/v1/payment-email-action"><input type="hidden" name="token" value="${
-        escapeHtml(token)
-      }">${details}${confirmation}</form><p><small>Opening this page does not change payment status. The action is recorded only after you confirm.</small></p>`;
-    return page(
-      isApproval ? "Verify and approve payment" : "Review and reject payment",
-      isApproval
-        ? "Check the actual GCash transaction before approving. OCR and a receipt image alone do not prove that money was received."
-        : "Confirm that this payment should be rejected. Premium will remain inactive.",
-      form,
-    );
-  }
-
   const { data: tokenRateAllowed, error: tokenRateError } = await client.rpc(
     "consume_payment_email_action_rate_limit",
     {
@@ -224,24 +225,120 @@ Deno.serve(async (request: Request): Promise<Response> => {
       "Email payment token rate limit failed:",
       tokenRateError.code,
     );
+    return isJsonPost
+      ? jsonResponse(request, { error: "service_unavailable" }, 503)
+      : page(
+        "Payment action unavailable",
+        "The payment service is temporarily unavailable. Please try again later.",
+        "",
+        503,
+      );
+  }
+  if (tokenRateAllowed !== true) {
+    return isJsonPost
+      ? jsonResponse(request, { error: "rate_limited" }, 429)
+      : page(
+        "Payment action unavailable",
+        "Too many attempts for this payment link. Please wait and try again.",
+        "",
+        429,
+      );
+  }
+  const { data: actionToken, error: tokenError } = await client
+    .from("payment_email_action_tokens")
+    .select(
+      "payment_request_id, action, reviewer_email, expires_at, consumed_at, revoked_at",
+    )
+    .eq("token_hash", hash)
+    .maybeSingle();
+  if (tokenError) {
+    console.error("Email payment action lookup failed:", tokenError.code);
+    if (isJsonPost) {
+      return jsonResponse(request, { error: "service_unavailable" }, 503);
+    }
     return page(
       "Payment action unavailable",
       "The payment service is temporarily unavailable. Please try again later.",
-      "",
-      503,
     );
   }
-  if (tokenRateAllowed !== true) {
+  if (
+    !actionToken ||
+    actionToken.reviewer_email !== reviewerEmail ||
+    !isPaymentEmailActionTokenActive(actionToken)
+  ) {
+    return isJsonPost
+      ? jsonResponse(request, { error: "invalid_or_expired_action" }, 400)
+      : invalidPage();
+  }
+
+  const isPreviewPost = isJsonPost && requestBody?.intent === "preview";
+  if (request.method === "GET" || isPreviewPost) {
+    const { data: payment, error } = await client
+      .from("premium_payment_requests")
+      .select(
+        "id, amount_centavos, currency, merchant_transaction_reference, payment_date, payment_time, payment_status, customer_full_name, payment_plans(name)",
+      )
+      .eq("id", actionToken.payment_request_id)
+      .maybeSingle();
+    if (error || !payment || payment.payment_status !== "under_review") {
+      return isJsonPost
+        ? jsonResponse(request, { error: "invalid_or_expired_action" }, 400)
+        : invalidPage();
+    }
+    const plan = payment.payment_plans;
+    const planName = plan && typeof plan === "object" && "name" in plan
+      ? plan.name
+      : "Premium";
+    if (isJsonPost) {
+      return jsonResponse(request, {
+        action: actionToken.action,
+        customer: payment.customer_full_name,
+        plan: planName,
+        currency: payment.currency,
+        amount_centavos: payment.amount_centavos,
+        reference: payment.merchant_transaction_reference,
+        payment_date: payment.payment_date,
+        payment_time: payment.payment_time,
+      });
+    }
+    const details = `<p>Customer: ${
+      escapeHtml(payment.customer_full_name)
+    }<br>Plan: ${escapeHtml(planName)}<br>Amount: ${
+      escapeHtml(payment.currency)
+    } ${(payment.amount_centavos / 100).toFixed(2)}<br>Reference: ${
+      escapeHtml(payment.merchant_transaction_reference)
+    }<br>Entered payment date/time: ${escapeHtml(payment.payment_date)} ${
+      escapeHtml(payment.payment_time)
+    }</p>`;
+    const isApproval = actionToken.action === "approve";
+    const confirmation = isApproval
+      ? `<label><input type="checkbox" name="confirm_received" value="true" required> I verified that this exact transaction was received in the official GCash account.</label><button type="submit">Confirm payment approval</button>`
+      : `<label for="reason">Reason for rejection</label><textarea id="reason" name="rejection_reason" maxlength="1000" required></textarea><button type="submit">Confirm payment rejection</button>`;
+    const form =
+      `<form method="post" action="/functions/v1/payment-email-action"><input type="hidden" name="token" value="${
+        escapeHtml(token)
+      }">${details}${confirmation}</form><p><small>Opening this page does not change payment status. The action is recorded only after you confirm.</small></p>`;
     return page(
-      "Payment action unavailable",
-      "Too many attempts for this payment link. Please wait and try again.",
-      "",
-      429,
+      isApproval ? "Verify and approve payment" : "Review and reject payment",
+      isApproval
+        ? "Compare the entered details with the receipt, then verify the transaction in authorized GCash merchant or provider records. A receipt image alone does not prove that money was received."
+        : "Confirm that this payment should be rejected. Premium will remain inactive.",
+      form,
     );
   }
 
-  const confirmReceived = formData?.get("confirm_received") === "true";
-  const rejectionReason = formData?.get("rejection_reason")?.toString() ?? "";
+  if (isJsonPost && requestBody?.intent !== "confirm") {
+    return jsonResponse(request, { error: "invalid_request" }, 400);
+  }
+
+  const confirmReceived = isJsonPost
+    ? requestBody?.confirm_received === true
+    : formData?.get("confirm_received") === "true";
+  const rejectionReason = isJsonPost
+    ? typeof requestBody?.rejection_reason === "string"
+      ? requestBody.rejection_reason
+      : ""
+    : formData?.get("rejection_reason")?.toString() ?? "";
   const { data: result, error: reviewError } = await client.rpc(
     "review_premium_payment_by_email_token",
     {
@@ -252,6 +349,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
     },
   );
   if (reviewError || !result) {
+    if (isJsonPost) {
+      return jsonResponse(request, {
+        error: "action_not_completed",
+      }, 409);
+    }
     return page(
       "Payment action not completed",
       "This action could not be completed. The link may have expired or already been used. Refresh the payment email before retrying.",
@@ -278,10 +380,17 @@ Deno.serve(async (request: Request): Promise<Response> => {
       }
     }
   }
+  const successMessage = actionToken.action === "approve"
+    ? "The verified transaction was approved and Premium activation was recorded."
+    : "The payment was rejected. Premium remains inactive.";
+  if (isJsonPost) {
+    return jsonResponse(request, {
+      action: actionToken.action,
+      message: successMessage,
+    });
+  }
   return page(
     actionToken.action === "approve" ? "Payment approved" : "Payment rejected",
-    actionToken.action === "approve"
-      ? "The verified transaction was approved and Premium activation was recorded."
-      : "The payment was rejected. Premium remains inactive.",
+    successMessage,
   );
 });

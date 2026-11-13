@@ -27,7 +27,10 @@ class PlantCatalogService {
 
     List<PlantRecord> verifiedPlants = const [];
     try {
-      verifiedPlants = await _searchVerifiedCatalog(trimmedQuery);
+      verifiedPlants = filterRelevantSearchResults(
+        trimmedQuery,
+        await _searchVerifiedCatalog(trimmedQuery),
+      );
     } catch (error) {
       debugPrint('Verified plant catalog lookup failed: $error');
     }
@@ -53,7 +56,10 @@ class PlantCatalogService {
       );
     }
 
-    final providerPlants = parseResponse(response.data);
+    final providerPlants = filterRelevantSearchResults(
+      trimmedQuery,
+      parseResponse(response.data),
+    );
     return preferVerifiedCatalogRecords(verifiedPlants, providerPlants);
   }
 
@@ -104,6 +110,66 @@ class PlantCatalogService {
       ),
     ]);
   }
+
+  @visibleForTesting
+  static List<PlantRecord> filterRelevantSearchResults(
+    String query,
+    List<PlantRecord> plants,
+  ) {
+    final normalizedQuery = _normalizeSearchText(query);
+    final terms = normalizedQuery.split(' ').where((term) => term.isNotEmpty);
+    if (terms.isEmpty) return const [];
+
+    final ranked = <({PlantRecord plant, int score, int index})>[];
+    for (var index = 0; index < plants.length; index++) {
+      final plant = plants[index];
+      final names = [
+        plant.commonName,
+        plant.scientificName,
+        plant.tagalogName,
+        plant.bisayaName,
+        plant.formerScientificName,
+      ].whereType<String>().map(_normalizeSearchText).toList(growable: false);
+      final allTerms = names
+          .expand((name) => name.split(' '))
+          .where((term) => term.isNotEmpty)
+          .toSet();
+      if (!terms.every(allTerms.contains)) continue;
+
+      var relevance = 100;
+      for (final name in names) {
+        if (name == normalizedQuery) {
+          relevance = 1000;
+        } else if (relevance < 800 && name.startsWith(normalizedQuery)) {
+          relevance = 800;
+        } else if (relevance < 600 && name.contains(normalizedQuery)) {
+          relevance = 600;
+        } else if (relevance < 400 &&
+            terms.every(name.split(' ').toSet().contains)) {
+          relevance = 400;
+        }
+      }
+      ranked.add((
+        plant: plant,
+        score: relevance + (plant.isVerified ? 10 : 0),
+        index: index,
+      ));
+    }
+
+    ranked.sort((a, b) {
+      final scoreOrder = b.score.compareTo(a.score);
+      return scoreOrder != 0 ? scoreOrder : a.index.compareTo(b.index);
+    });
+    return List.unmodifiable(ranked.map((result) => result.plant));
+  }
+
+  static final _searchSeparators = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
+
+  static String _normalizeSearchText(String value) => value
+      .toLowerCase()
+      .replaceAll(_searchSeparators, ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
 
   static String _normalizedName(String name) =>
       name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();

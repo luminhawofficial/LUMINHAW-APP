@@ -76,6 +76,55 @@ void main() {
     },
   );
 
+  test('ignores confidence values outside the provider probability range', () {
+    final result = PlantIdentificationService.parseResponse(
+      {
+        'result': {
+          'classification': {
+            'suggestions': [
+              {'name': 'Unknown plant', 'probability': 1.4},
+            ],
+          },
+        },
+      },
+      scanId: 'scan-id',
+      imageBytes: Uint8List(0),
+    );
+
+    expect(result.probability, isNull);
+    expect(result.hasLowConfidence, isFalse);
+  });
+
+  test('selects the named identification with the strongest valid score', () {
+    final result = PlantIdentificationService.parseResponse(
+      {
+        'result': {
+          'classification': {
+            'suggestions': [
+              {
+                'name': 'First suggestion',
+                'probability': 0.41,
+                'details': {'scientific_name': 'First suggestion'},
+              },
+              {
+                'name': 'Best suggestion',
+                'probability': 0.87,
+                'details': {'scientific_name': 'Best species'},
+              },
+              {'name': 'Invalid score', 'probability': 1.4},
+            ],
+          },
+        },
+      },
+      scanId: 'scan-id',
+      imageBytes: Uint8List(0),
+    );
+
+    expect(result.name, 'Best suggestion');
+    expect(result.scientificName, 'Best species');
+    expect(result.probability, 0.87);
+  });
+
   test('reads enriched care fields and provenance from saved scan results', () {
     final result = PlantIdentificationService.parseResponse(
       {

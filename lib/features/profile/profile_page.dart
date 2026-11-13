@@ -15,6 +15,25 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   int _avatarRefreshToken = 0;
+  late final Future<bool> _canReviewPayments = _loadPaymentAdminCapability();
+
+  Future<bool> _loadPaymentAdminCapability() async {
+    if (!SupabaseBackend.isInitialized || SupabaseAuthService.currentUser == null) {
+      return false;
+    }
+    try {
+      final response = await SupabaseBackend.client.functions.invoke(
+        'admin-api',
+        body: {'action': 'session'},
+      );
+      final data = response.data;
+      return response.status >= 200 && response.status < 300 && data is Map &&
+          data['capabilities'] is Map &&
+          (data['capabilities'] as Map)['manage_payments'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> _openProfileEditor(String route) async {
     await Navigator.pushNamed(context, route);
@@ -88,6 +107,16 @@ class _ProfilePageState extends State<ProfilePage> {
                 icon: Icons.workspace_premium_outlined,
                 title: 'Subscription & payment',
                 onTap: () => Navigator.pushNamed(context, '/premium'),
+              ),
+              FutureBuilder<bool>(
+                future: _canReviewPayments,
+                builder: (context, snapshot) => snapshot.data == true
+                    ? _ProfileLink(
+                        icon: Icons.fact_check_outlined,
+                        title: 'GCash payment review',
+                        onTap: () => Navigator.pushNamed(context, '/admin/payments'),
+                      )
+                    : const SizedBox.shrink(),
               ),
               _ProfileLink(
                 icon: Icons.notifications_none,

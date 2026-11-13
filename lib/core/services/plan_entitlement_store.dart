@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:luminhaw/core/services/premium_payment_service.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum PlanTier { free, premium }
 
@@ -26,12 +27,15 @@ class PlanEntitlementStore {
 
   int _refreshGeneration = 0;
   String? _entitlementUserId;
+  String? _realtimeUserId;
+  RealtimeChannel? _entitlementChannel;
   Timer? _expirationTimer;
 
   Future<void> refreshFromServer() async {
     final generation = ++_refreshGeneration;
     final initialUser = SupabaseAuthService.currentUser;
     if (initialUser == null) {
+      _stopRealtimeSubscription();
       _clearEntitlement();
       _entitlementUserId = null;
       refreshError.value = null;
@@ -40,6 +44,7 @@ class PlanEntitlementStore {
     }
 
     final userId = initialUser.id;
+    _ensureRealtimeSubscription(userId);
     if (_entitlementUserId != userId) {
       tier.value = PlanTier.free;
       _entitlementUserId = null;
@@ -156,4 +161,59 @@ class PlanEntitlementStore {
   bool _isCurrentGenerationForUser(int generation, String userId) =>
       generation == _refreshGeneration &&
       SupabaseAuthService.currentUser?.id == userId;
+
+  void _ensureRealtimeSubscription(String userId) {
+    if (!SupabaseBackend.isInitialized ||
+        (_realtimeUserId == userId && _entitlementChannel != null)) {
+      return;
+    }
+
+    _stopRealtimeSubscription();
+    _realtimeUserId = userId;
+    _entitlementChannel = SupabaseBackend.client
+        .channel('premium-entitlement-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'subscription_entitlements',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) {
+            if (SupabaseAuthService.currentUser?.id == userId) {
+              unawaited(_refreshAfterEntitlementChange(userId));
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  Future<void> _refreshAfterEntitlementChange(String userId) async {
+    try {
+      if (SupabaseAuthService.currentUser?.id == userId) {
+        await refreshFromServer();
+      }
+    } catch (error) {
+      debugPrint('Subscription refresh after server update failed: $error');
+    }
+  }
+
+  void _stopRealtimeSubscription() {
+    final channel = _entitlementChannel;
+    _entitlementChannel = null;
+    _realtimeUserId = null;
+    if (channel != null && SupabaseBackend.isInitialized) {
+      unawaited(_removeRealtimeChannel(channel));
+    }
+  }
+
+  Future<void> _removeRealtimeChannel(RealtimeChannel channel) async {
+    try {
+      await SupabaseBackend.client.removeChannel(channel);
+    } catch (error) {
+      debugPrint('Subscription realtime cleanup failed: $error');
+    }
+  }
 }

@@ -1,6 +1,9 @@
 begin;
 
-select plan(22);
+create extension if not exists pgtap with schema extensions;
+set local search_path = extensions, public;
+
+select plan(30);
 
 select ok(
   not has_function_privilege(
@@ -32,7 +35,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'authenticated',
-    'public.submit_premium_payment(uuid, uuid, text, date, time, text, jsonb)',
+    'public.submit_premium_payment(uuid, uuid, text, date, time, integer, text, jsonb)',
     'EXECUTE'
   ),
   'authenticated users cannot bypass server-side receipt validation'
@@ -41,16 +44,16 @@ select ok(
 select ok(
   has_function_privilege(
     'service_role',
-    'public.submit_premium_payment(uuid, uuid, text, date, time, text, jsonb)',
+    'public.submit_premium_payment(uuid, uuid, text, date, time, integer, text, jsonb)',
     'EXECUTE'
   ),
-  'the trusted payment function can persist OCR results'
+  'the trusted submission function can accept manual receipt submissions'
 );
 
 select ok(
   not has_function_privilege(
     'anon',
-    'public.submit_premium_payment(uuid, uuid, text, date, time, text, jsonb)',
+    'public.submit_premium_payment(uuid, uuid, text, date, time, integer, text, jsonb)',
     'EXECUTE'
   ),
   'anonymous users cannot submit payment receipts'
@@ -140,13 +143,14 @@ select is(
     '00000000-0000-4000-8000-000000000501',
     '00000000-0000-4000-8000-000000000502',
     '1234567890123',
-    current_date,
+    current_date - 1,
     '09:42',
+    4900,
     '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000502/receipt.jpg',
     jsonb_build_object(
       'referenceNumber', '1234567890123',
-      'transactionDate', current_date::text,
-      'transactionTime', '9:41 AM',
+      'transactionDate', (current_date - 1)::text,
+      'transactionTime', '9:35 AM',
       'amountCentavos', 4900,
       'transactionStatus', 'successful',
       'confidence', 0.95,
@@ -158,7 +162,7 @@ select is(
       'isGcashReceipt', true,
       'imageReadable', true,
       'referenceMatch', true,
-      'dateMatch', true,
+      'dateMatch', false,
       'timeMatch', false,
       'amountMatch', true,
       'duplicateReference', false,
@@ -166,8 +170,8 @@ select is(
       'reason', 'The transaction time differs.'
     )
   ),
-  'under_review',
-  'a readable receipt with mismatching fields enters manual review'
+  'validation_failed',
+  'OCR-bearing submissions are rejected because OCR is disabled'
 );
 
 select is(
@@ -176,8 +180,8 @@ select is(
     from public.premium_payment_requests
     where id = '00000000-0000-4000-8000-000000000502'
   ),
-  'under_review'::text,
-  'a receipt mismatch is not automatically rejected'
+  'pending'::text,
+  'a submission containing OCR data does not enter the review queue'
 );
 
 select is(
@@ -186,8 +190,8 @@ select is(
     from public.premium_payment_requests
     where id = '00000000-0000-4000-8000-000000000502'
   ),
-  'manual_review'::text,
-  'the payment records its manual-review OCR status'
+  null::text,
+  'a rejected receipt does not record OCR as submitted'
 );
 
 select is(
@@ -197,8 +201,8 @@ select is(
     where payment_request_id = '00000000-0000-4000-8000-000000000502'
       and notification_type = 'admin_payment_submitted'
   ),
-  1,
-  'a mismatching receipt queues administrator email review'
+  0,
+  'a mismatching receipt does not queue administrator email review'
 );
 
 insert into public.premium_payment_requests (
@@ -221,45 +225,31 @@ select is(
     '00000000-0000-4000-8000-000000000501',
     '00000000-0000-4000-8000-000000000505',
     '1234567890125',
-    current_date,
+    current_date - 1,
     '09:42',
+    4900,
     '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000505/receipt.jpg',
-    jsonb_build_object(
-      'referenceNumber', '1234567890125',
-      'transactionDate', current_date::text,
-      'transactionTime', '09:42',
-      'amountCentavos', 4900,
-      'transactionStatus', 'successful',
-      'confidence', null,
-      'imageWidth', 1080,
-      'imageHeight', 1920,
-      'validImage', true,
-      'providerIdentification', 'ambiguous',
-      'hasTransactionMarkers', true,
-      'isGcashReceipt', false,
-      'imageReadable', false,
-      'referenceMatch', true,
-      'dateMatch', true,
-      'timeMatch', true,
-      'amountMatch', true,
-      'duplicateReference', false,
-      'status', 'manual_review',
-      'reason', 'The OCR provider text is ambiguous; verify the receipt manually.'
-    )
+    null
   ),
   'under_review',
-  'an ambiguous OCR.space provider with no confidence can only enter manual review'
+  'a receipt is accepted for manual review without any OCR result'
 );
 
 select ok(
   (
-    select ocr_confidence is null
-      and ocr_status = 'manual_review'
+    select ocr_reference_number is null
+      and ocr_transaction_date is null
+      and ocr_transaction_time is null
+      and ocr_amount_centavos is null
+      and ocr_recipient is null
+      and ocr_transaction_status is null
+      and ocr_confidence is null
+      and ocr_status is null
       and image_quality_status = 'needs_manual_review'
     from public.premium_payment_requests
     where id = '00000000-0000-4000-8000-000000000505'
   ),
-  'OCR.space confidence remains null and the receipt is marked for manual review'
+  'receipt detail extraction fields remain null during manual review'
 );
 
 select is(
@@ -324,46 +314,32 @@ select is(
     '00000000-0000-4000-8000-000000000501',
     '00000000-0000-4000-8000-000000000506',
     '1234567890126',
-    current_date,
+    current_date - 1,
     '09:42',
+    4900,
     '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000506/receipt.jpg',
-    jsonb_build_object(
-      'referenceNumber', '1234567890126',
-      'transactionDate', current_date::text,
-      'transactionTime', '09:42',
-      'amountCentavos', 4900,
-      'transactionStatus', 'successful',
-      'confidence', null,
-      'imageWidth', 1080,
-      'imageHeight', 1920,
-      'validImage', true,
-      'providerIdentification', 'gcash',
-      'hasTransactionMarkers', true,
-      'isGcashReceipt', true,
-      'imageReadable', false,
-      'referenceMatch', true,
-      'dateMatch', true,
-      'timeMatch', true,
-      'amountMatch', true,
-      'duplicateReference', false,
-      'status', 'manual_review',
-      'reason', 'OCR.space supplies no confidence; verify the receipt manually.'
-    )
+    null
   ),
   'under_review',
-  'a matching GCash receipt with null confidence is accepted only for manual review'
+  'a receipt with no OCR data is accepted only for manual review'
 );
 
 select ok(
   (
     select payment_status = 'under_review'
-      and ocr_status = 'manual_review'
+      and ocr_status is null
+      and ocr_reference_number is null
+      and ocr_transaction_date is null
+      and ocr_transaction_time is null
+      and ocr_amount_centavos is null
+      and ocr_recipient is null
+      and ocr_transaction_status is null
       and ocr_confidence is null
       and image_quality_status = 'needs_manual_review'
     from public.premium_payment_requests
     where id = '00000000-0000-4000-8000-000000000506'
   ),
-  'null-confidence GCash submission is persisted for review without fabricating confidence'
+  'manual submission stores no extracted receipt details or confidence'
 );
 
 select is(
@@ -371,12 +347,13 @@ select is(
     '00000000-0000-4000-8000-000000000501',
     '00000000-0000-4000-8000-000000000507',
     '1234567890127',
-    current_date,
+    current_date - 1,
     '09:42',
+    4900,
     '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000507/receipt.jpg',
     jsonb_build_object(
       'referenceNumber', '1234567890127',
-      'transactionDate', current_date::text,
+      'transactionDate', (current_date - 1)::text,
       'transactionTime', '09:42',
       'amountCentavos', 4900,
       'transactionStatus', 'successful',
@@ -398,7 +375,7 @@ select is(
     )
   ),
   'validation_failed',
-  'a matched receipt with null confidence is rejected'
+  'OCR-generated matched status cannot be supplied to the RPC'
 );
 
 select is(
@@ -406,12 +383,13 @@ select is(
     '00000000-0000-4000-8000-000000000501',
     '00000000-0000-4000-8000-000000000508',
     '1234567890128',
-    current_date,
+    current_date - 1,
     '09:42',
+    4900,
     '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000508/receipt.jpg',
     jsonb_build_object(
       'referenceNumber', '1234567890128',
-      'transactionDate', current_date::text,
+      'transactionDate', (current_date - 1)::text,
       'transactionTime', '09:42',
       'amountCentavos', 4900,
       'transactionStatus', 'successful',
@@ -433,7 +411,7 @@ select is(
     )
   ),
   'validation_failed',
-  'a manual-review receipt with confidence below 0.75 is rejected'
+  'OCR-generated confidence data cannot be supplied to the RPC'
 );
 
 select is(
@@ -441,12 +419,13 @@ select is(
     '00000000-0000-4000-8000-000000000501',
     '00000000-0000-4000-8000-000000000509',
     '1234567890129',
-    current_date,
+    current_date - 1,
     '09:42',
+    4900,
     '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000509/receipt.jpg',
     jsonb_build_object(
       'referenceNumber', '1234567890129',
-      'transactionDate', current_date::text,
+      'transactionDate', (current_date - 1)::text,
       'transactionTime', '09:42',
       'amountCentavos', 4900,
       'transactionStatus', 'successful',
@@ -468,7 +447,209 @@ select is(
     )
   ),
   'validation_failed',
-  'a manual-review receipt with confidence above 1.0 is rejected'
+  'OCR-generated confidence data cannot be supplied to the RPC'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'premium_payment_transaction_reference_unique'
+      and indexdef ilike '%unique%'
+      and indexdef ilike '%regexp_replace%'
+  ),
+  'normalized transaction references have a database unique index'
+);
+
+insert into public.premium_payment_requests (
+  id, user_id, plan_id, amount_centavos, currency,
+  unique_payment_reference, payment_status, customer_email
+)
+values (
+  '00000000-0000-4000-8000-000000000510',
+  '00000000-0000-4000-8000-000000000501',
+  (select id from public.payment_plans where code = 'premium_30_days'),
+  4900,
+  'PHP',
+  'LUM-PGTEST-OPTIONAL-TIME-001',
+  'pending',
+  'payment-manual-review-test@example.com'
+);
+
+select is(
+  public.submit_premium_payment(
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000510',
+    '1234567890130',
+    current_date - 1,
+    null,
+    4900,
+    '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000510/receipt.jpg',
+    null
+  ),
+  'under_review',
+  'a valid submission does not require transaction time'
+);
+
+select ok(
+  (
+    select payment_time is null
+    from public.premium_payment_requests
+    where id = '00000000-0000-4000-8000-000000000510'
+  ),
+  'a missing transaction time is stored as null'
+);
+
+insert into public.premium_payment_requests (
+  id, user_id, plan_id, amount_centavos, currency,
+  unique_payment_reference, payment_status, customer_email
+)
+values
+  (
+    '00000000-0000-4000-8000-000000000511',
+    '00000000-0000-4000-8000-000000000501',
+    (select id from public.payment_plans where code = 'premium_30_days'),
+    4900,
+    'PHP',
+    'LUM-PGTEST-INVALID-REFERENCE-001',
+    'pending',
+    'payment-manual-review-test@example.com'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000512',
+    '00000000-0000-4000-8000-000000000501',
+    (select id from public.payment_plans where code = 'premium_30_days'),
+    4900,
+    'PHP',
+    'LUM-PGTEST-WRONG-AMOUNT-001',
+    'pending',
+    'payment-manual-review-test@example.com'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000513',
+    '00000000-0000-4000-8000-000000000501',
+    (select id from public.payment_plans where code = 'premium_30_days'),
+    4900,
+    'PHP',
+    'LUM-PGTEST-FUTURE-DATE-001',
+    'pending',
+    'payment-manual-review-test@example.com'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000516',
+    '00000000-0000-4000-8000-000000000501',
+    (select id from public.payment_plans where code = 'premium_30_days'),
+    4900,
+    'PHP',
+    'LUM-PGTEST-MISSING-RECEIPT-001',
+    'pending',
+    'payment-manual-review-test@example.com'
+  );
+
+select is(
+  public.submit_premium_payment(
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000511',
+    '1234567890 12X3',
+    current_date - 1,
+    null,
+    4900,
+    '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000511/receipt.jpg',
+    null
+  ),
+  'validation_failed',
+  'reference values containing non-digit separators are rejected'
+);
+
+select is(
+  public.submit_premium_payment(
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000512',
+    '1234567890131',
+    current_date - 1,
+    null,
+    4901,
+    '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000512/receipt.jpg',
+    null
+  ),
+  'validation_failed',
+  'a manually entered amount must match the configured plan amount'
+);
+
+select is(
+  public.submit_premium_payment(
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000513',
+    '1234567890132',
+    current_date + 1,
+    null,
+    4900,
+    '00000000-0000-4000-8000-000000000501/00000000-0000-4000-8000-000000000513/receipt.jpg',
+    null
+  ),
+  'validation_failed',
+  'future transaction dates are rejected'
+);
+
+select is(
+  public.submit_premium_payment(
+    '00000000-0000-4000-8000-000000000501',
+    '00000000-0000-4000-8000-000000000516',
+    '1234567890133',
+    current_date - 1,
+    null,
+    4900,
+    null,
+    null
+  ),
+  'validation_failed',
+  'a receipt storage path is required'
+);
+
+insert into auth.users (
+  id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data
+)
+values (
+  '00000000-0000-4000-8000-000000000514',
+  'authenticated',
+  'authenticated',
+  'payment-manual-review-second-test@example.com',
+  '',
+  now(),
+  '{}'::jsonb,
+  '{}'::jsonb
+);
+
+insert into public.premium_payment_requests (
+  id, user_id, plan_id, amount_centavos, currency,
+  unique_payment_reference, payment_status, customer_email
+)
+values (
+  '00000000-0000-4000-8000-000000000515',
+  '00000000-0000-4000-8000-000000000514',
+  (select id from public.payment_plans where code = 'premium_30_days'),
+  4900,
+  'PHP',
+  'LUM-PGTEST-CROSS-ACCOUNT-DUPLICATE-001',
+  'pending',
+  'payment-manual-review-second-test@example.com'
+);
+
+select is(
+  public.submit_premium_payment(
+    '00000000-0000-4000-8000-000000000514',
+    '00000000-0000-4000-8000-000000000515',
+    '1234567890130',
+    current_date - 1,
+    null,
+    4900,
+    '00000000-0000-4000-8000-000000000514/00000000-0000-4000-8000-000000000515/receipt.jpg',
+    null
+  ),
+  'duplicate_reference',
+  'a reference number cannot be reused by another account'
 );
 
 select * from finish();

@@ -7,15 +7,13 @@ import {
 } from "../_shared/payments.ts";
 import { deliverPaymentNotification as sendPaymentNotification } from "../_shared/payment-email.ts";
 import {
-  classifyReceipt,
   inspectReceiptImage,
-  isSupportedImage,
-  readGcashReceipt,
-} from "../_shared/receipt-ocr.ts";
+  manilaDateString,
+} from "../_shared/manual-receipts.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
 
 const notGcashReceiptMessage =
-  "The uploaded image does not appear to be a GCash receipt. Please upload or take a clear picture of your official GCash receipt.";
+  "Upload a valid JPG or PNG receipt image, up to 5 MB.";
 
 Deno.serve(async (request: Request): Promise<Response> => {
   if (request.method === "OPTIONS") {
@@ -34,43 +32,57 @@ Deno.serve(async (request: Request): Promise<Response> => {
   const reference = parsed.body.transactionReference;
   const paymentDate = parsed.body.paymentDate;
   const paymentTime = parsed.body.paymentTime;
+  const amountCentavos = parsed.body.amountCentavos;
   const proofPath = parsed.body.proofStoragePath;
   const normalizedReference = typeof reference === "string"
-    ? reference.replace(/\D/g, "")
+    ? reference.replaceAll(" ", "")
     : "";
   if (
     !isUuid(requestId) ||
     typeof reference !== "string" ||
+    !/^[0-9 ]+$/.test(reference) ||
     !/^\d{13}$/.test(normalizedReference) ||
     typeof paymentDate !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate) ||
-    typeof paymentTime !== "string" ||
-    !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(paymentTime) ||
+    (paymentTime != null &&
+      (typeof paymentTime !== "string" ||
+        !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(paymentTime))) ||
+    typeof amountCentavos !== "number" ||
+    !Number.isInteger(amountCentavos) ||
+    amountCentavos <= 0 ||
     typeof proofPath !== "string"
   ) {
     const invalidReference = typeof reference !== "string" ||
       !/^\d{13}$/.test(normalizedReference);
+    const invalidAmount = typeof amountCentavos !== "number" ||
+      !Number.isInteger(amountCentavos) ||
+      amountCentavos <= 0;
     return jsonResponse({
       success: false,
       status: "validation_failed",
       error_code: invalidReference
         ? "reference_invalid"
+        : invalidAmount
+        ? "wrong_payment_amount"
         : "invalid_payment_submission",
       message: invalidReference
         ? "Your reference number must contain exactly 13 digits in the format 0000 000 000000."
+        : invalidAmount
+        ? "Enter the exact payment amount shown for your plan."
         : "Check the payment date, time, and uploaded receipt, then try again.",
     }, 400);
   }
+  const now = new Date();
+  const todayInManila = manilaDateString(now);
+  const earliestInManila = new Date(
+    Date.parse(`${todayInManila}T00:00:00.000Z`) - 90 * 86_400_000,
+  ).toISOString().slice(0, 10);
   const date = new Date(`${paymentDate}T00:00:00.000Z`);
-  const today = new Date();
-  const earliest = new Date(today.getTime() - 90 * 86_400_000);
-  earliest.setUTCHours(0, 0, 0, 0);
-  today.setUTCHours(0, 0, 0, 0);
   if (
     Number.isNaN(date.getTime()) ||
     date.toISOString().slice(0, 10) !== paymentDate ||
-    date > today ||
-    date < earliest
+    paymentDate > todayInManila ||
+    paymentDate < earliestInManila
   ) {
     return jsonResponse({
       success: false,
@@ -96,7 +108,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (isResponse(client)) return client;
   const { data: payment, error: paymentError } = await client
     .from("premium_payment_requests")
-    .select("id, amount_centavos, payment_status")
+    .select("id, payment_status, amount_centavos")
     .eq("id", requestId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -105,6 +117,15 @@ Deno.serve(async (request: Request): Promise<Response> => {
       { error: { code: "payment_request_not_submittable" } },
       409,
     );
+  }
+  if (payment.amount_centavos !== amountCentavos) {
+    return jsonResponse({
+      success: false,
+      status: "validation_failed",
+      error_code: "wrong_payment_amount",
+      message:
+        "The payment amount does not match your selected subscription plan.",
+    }, 400);
   }
   const { data: duplicateReference, error: duplicateError } = await client.rpc(
     "payment_reference_exists",
@@ -132,7 +153,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       status: "validation_failed",
       error_code: "duplicate_reference",
       message:
-        "This GCash reference number has already been submitted or used.",
+        "This GCash reference number has already been submitted. Please check your transaction details.",
       checks: { duplicateReference: true },
     }, 409);
   }
@@ -173,12 +194,12 @@ Deno.serve(async (request: Request): Promise<Response> => {
     }, 422);
   }
   const proofBytes = new Uint8Array(await proofBlob.arrayBuffer());
-  const image = inspectReceiptImage(proofBytes);
+  const inspectedImage = inspectReceiptImage(proofBytes);
   if (
     proofBytes.length !== proof.metadata.size ||
     proofBytes.length > 5 * 1024 * 1024 ||
-    !isSupportedImage(proofBytes) ||
-    proof.metadata.mimetype !== image.mimeType
+    !inspectedImage.valid ||
+    inspectedImage.mimeType !== proof.metadata.mimetype
   ) {
     return jsonResponse({
       success: false,
@@ -188,85 +209,15 @@ Deno.serve(async (request: Request): Promise<Response> => {
     }, 422);
   }
 
-  const ocrSpaceKey = Deno.env.get("OCR_SPACE_API_KEY")?.trim();
-  if (!ocrSpaceKey) {
-    console.error("GCash receipt OCR is not configured.");
-    return jsonResponse({
-      error: {
-        code: "receipt_validation_unavailable",
-        message:
-          "Receipt validation is temporarily unavailable. Please try again later.",
-      },
-    }, 503);
-  }
-  let ocrResult;
-  try {
-    ocrResult = await readGcashReceipt(proofBytes, ocrSpaceKey);
-  } catch (error) {
-    console.error(
-      "GCash receipt OCR failed:",
-      error instanceof Error ? error.message : "unknown",
-    );
-    return jsonResponse({
-      error: {
-        code: "receipt_validation_unavailable",
-        message:
-          "Receipt validation is temporarily unavailable. Please try again later.",
-      },
-    }, 503);
-  }
-  const classification = classifyReceipt({
-    result: ocrResult,
-    submittedReference: normalizedReference,
-    submittedDate: paymentDate,
-    submittedTime: paymentTime,
-    expectedAmountCentavos: payment.amount_centavos,
-  });
-  if (
-    classification.status === "rejected" ||
-    classification.status === "inconclusive"
-  ) {
-    return jsonResponse({
-      success: false,
-      status: "validation_failed",
-      error_code: classification.errorCode ?? "receipt_validation_inconclusive",
-      message: classification.reason ??
-        "We cannot read the transaction details. Please upload a clearer image.",
-      checks: classification.checks,
-    }, 422);
-  }
-
-  const ocrRecord = {
-    referenceNumber: ocrResult.referenceNumber,
-    transactionDate: ocrResult.transactionDate,
-    transactionTime: ocrResult.transactionTime,
-    amountCentavos: ocrResult.amountCentavos,
-    recipient: ocrResult.recipient,
-    transactionStatus: ocrResult.transactionStatus,
-    providerIdentification: ocrResult.providerIdentification,
-    hasTransactionMarkers: ocrResult.hasTransactionMarkers,
-    confidence: ocrResult.confidence,
-    imageWidth: ocrResult.imageWidth,
-    imageHeight: ocrResult.imageHeight,
-    validImage: classification.checks.validImage,
-    isGcashReceipt: classification.checks.isGcashReceipt,
-    imageReadable: classification.checks.imageReadable,
-    referenceMatch: classification.checks.referenceMatch,
-    amountMatch: classification.checks.amountMatch,
-    dateMatch: classification.checks.dateMatch,
-    timeMatch: classification.checks.timeMatch,
-    duplicateReference: classification.checks.duplicateReference,
-    status: classification.status,
-    reason: classification.reason,
-  };
   const { data, error } = await client.rpc("submit_premium_payment", {
     p_user_id: userId,
     p_payment_request_id: requestId,
     p_transaction_reference: normalizedReference,
     p_payment_date: paymentDate,
-    p_payment_time: paymentTime,
+    p_payment_time: paymentTime ?? null,
+    p_amount_centavos: amountCentavos,
     p_proof_storage_path: proofPath,
-    p_ocr_result: ocrRecord,
+    p_ocr_result: null,
   });
   if (error) {
     console.error("Payment submission failed:", error.code);
@@ -277,7 +228,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
             ? "duplicate_payment_reference"
             : "payment_submission_unavailable",
           message: error.message?.includes("duplicate key")
-            ? "This GCash reference number has already been submitted or used."
+            ? "This GCash reference number has already been submitted. Please check your transaction details."
             : "The payment could not be submitted. Please try again later.",
         },
       },
@@ -291,8 +242,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
         status: "validation_failed",
         error_code: "duplicate_reference",
         message:
-          "This GCash reference number has already been submitted or used.",
-        checks: { ...classification.checks, duplicateReference: true },
+          "This GCash reference number has already been submitted. Please check your transaction details.",
+        checks: { duplicateReference: true },
       },
       409,
     );
@@ -302,11 +253,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       success: false,
       status: "validation_failed",
       error_code: data === "validation_failed"
-        ? "receipt_validation_inconclusive"
+        ? "invalid_payment_submission"
         : "payment_request_not_submittable",
-      message:
-        "The receipt could not be validated. Please upload a clear GCash receipt and check the transaction details.",
-      checks: classification.checks,
+      message: "The payment could not be submitted for manual review.",
     }, 422);
   }
   const { data: notification, error: notificationError } = await client
@@ -327,12 +276,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
   return jsonResponse({
     success: true,
     status: "under_review",
-    message: classification.status === "manual_review"
-      ? "Some receipt details differ or could not be matched. Your submission has been sent for manual review; Premium remains inactive."
-      : "Your GCash receipt has passed automated checks. Your payment is now waiting for email verification.",
+    message:
+      "Your receipt has been sent for manual verification. Premium remains inactive until an administrator confirms the transaction in authorized GCash records.",
     submitted: true,
     paymentStatus: data,
-    ocrStatus: classification.status,
     emailNotification: emailResult.delivered ? "sent" : "queued_for_retry",
   });
 });

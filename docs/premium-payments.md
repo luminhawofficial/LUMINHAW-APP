@@ -12,56 +12,44 @@ activation.
   obtains the selected amount from the enabled plan; the client cannot choose
   another user ID or amount.
 - Customers upload or photograph a private JPEG/PNG receipt, preview or remove
-  it, enter the transaction date/time, and enter a 13-digit reference shown as
-  `0000 000 000000`.
+  it, enter the transaction date, optionally enter the transaction time, enter
+  the amount paid, and enter a 13-digit reference shown as `0000 000 000000`.
 - A customer may change plans only while a request is still pending and before
   sending payment. Changing plans cancels the pending request through the
   authenticated payment endpoint and records the cancellation in the payment
   event log. Submitted requests cannot be cancelled from checkout.
-- The backend verifies file signatures and image structure, sends the image to
-  OCR.space and requires transaction markers, required transaction fields,
-  and a successful transaction status. Clearly identified GCash receipts
-  continue through field checks; explicit other-wallet receipts are rejected.
-  Likely GCash OCR misreads such as `GCa5h` are sent to manual review, while
-  missing provider identification or incomplete details are inconclusive.
-  Exact matches from OCR.space are also sent to manual review because the
-  provider does not supply numeric confidence. The OCR-extracted recipient is
-  shown to the reviewer when available, but is not treated as verified proof of
-  the merchant.
-- A database uniqueness index and transactional checks prevent reuse of the
-  normalized reference. OCR is not proof that funds arrived and never activates
-  Premium.
+- The backend validates the reference format, transaction date, optional time,
+  positive amount against the selected plan, private storage path, and JPEG/PNG
+  file signature, structure, and size. It does not use OCR, AI, or image
+  analysis to extract or validate transaction details.
+- A database unique index on the normalized numeric reference and a
+  transactional submission function prevent reuse across accounts, including
+  concurrent submissions.
 
-OCR text matching cannot prove that a receipt is genuine, detect every fake
-template, or reliably measure blur/cropping. The email reviewer must compare
-the submitted transaction against the official GCash merchant records before
-approving. Do not describe the OCR result as payment verification.
+The submission screen confirms that the receipt was sent for review. This is
+not proof that funds arrived and does not activate Premium. An administrator
+must compare the entered reference, date, optional time, and amount with the
+receipt, then verify the transaction in authorized GCash merchant or provider
+records before approving. The screenshot and entered details alone are not
+sufficient evidence.
 
-The strict
-`20261106230000_email_payment_approval_and_strict_receipts.sql` RPC requires a
-numeric confidence of at least `0.75` for automatic matches. Its local
-definition accepts a missing confidence only for `manual_review`, requires
-transaction markers and complete required fields, records the absent score as
-null, and marks image quality for manual review. Ambiguous provider
-identification can never be automatically matched. This does not fabricate
-confidence or grant Premium; approval still requires the separate reviewer
-action. Apply and test migrations only in a dedicated local project before
-considering any non-production or production rollout.
+## Administrator review
 
-## Email-only review
+The GCash payment review page is available only to the single active account
+with the `admin` role. It lists
+customer name/email, reference, entered date/time,
+amount, private receipt, submission time, and status; administrators can search
+references, filter by status, review prior submissions, and open the receipt
+full-size. Approval requires explicit confirmation of verification against
+authorized merchant/provider records. Rejection requires a reason shown to the
+customer.
 
-Submissions that pass image/receipt checks notify
-`luminhawofficial@gmail.com` with customer and payment details, OCR results and
-a short-lived signed link to the private receipt. Separate
-cryptographically random approve/reject tokens are generated for each action;
-only SHA-256 token hashes are stored. Tokens expire after 48 hours, are bound
-to one payment and one action, and become unusable after the first decision.
-The email-action endpoint uses a separate hash-keyed rate-limit table rather
-than the auth-user rate-limit table.
-Opening a link only displays a confirmation form. Approval requires an explicit
-confirmation that the actual GCash transaction was received; rejection requires
-a reason. The database records the reviewer email and decision in the payment
-row and audit log. No admin dashboard or extra Supabase Auth user is required.
+Submitting a receipt gives the customer an immediate in-app confirmation and
+places the payment in the manual-review queue. Approved and rejected decisions
+queue customer email notifications; payment history shows the current status
+and rejection reason. Optional single-use email review links also require
+confirmation for approval and a reason for rejection. Tokens are bound to one
+payment and action, expire, and become unusable after a decision.
 
 The authenticated payment-status endpoint retries pending, failed, and stale
 in-progress notifications using an atomic database claim. Notifications already
@@ -76,32 +64,30 @@ Email-link possession is the authorization mechanism. The recorded reviewer
 identity is the configured mailbox address, not an independently authenticated
 individual. Protect access to that mailbox.
 
-Premium activation occurs only inside the transactional email-review database
-function after a valid approval. The operation locks the payment/token,
-consumes the token, revokes sibling tokens, records the decision, and activates
-or extends the entitlement by the selected plan's configured duration: exactly
-30 or 365 days. Rejection never activates Premium.
+Premium activation occurs only inside an authorized transactional review
+function after approval. It locks the payment, records the decision, and
+activates or extends the entitlement by the selected plan's configured
+duration: exactly 30 or 365 days. Rejection never activates Premium, and users
+cannot approve their own payments.
 
 The checkout readiness gate reports each missing environment variable,
 provider setting, plan record, and private QR object separately. It requires
-the explicit GCash enable flag, complete merchant details, Resend and OCR
-configuration, both required plans enabled at their confirmed
+The explicit GCash enable flag, complete merchant details, Resend configuration,
+both required plans enabled at their confirmed
 prices/durations/QR paths, successful short-lived signing of both private QR
-objects, and a submission RPC that supports confidence-free manual review.
-These checks do not prove that Resend, deployed RPCs, or the end-to-end review
-workflow are operational; verify those with a non-production integration test
-before enabling checkout.
+objects, and the manual-review submission RPC. OCR configuration is not
+required. These checks do not prove that Resend, deployed RPCs, or the
+end-to-end review workflow are operational; verify those with a non-production
+integration test before enabling checkout.
 
 ## Production-readiness checklist
 
-Code-level checks are not production verification. In this environment, all
-local migrations were replayed and `supabase test db` passed all 69 pgTAP
-tests, including the receipt-review security cases. Flutter tests and analysis
-also passed in prior local verification. Deno is not installed in the current
-shell, so Edge Function unit tests and type checks were not rerun here. No
+Code-level checks are not production verification. Flutter payment tests and
+analysis, and the relevant Deno checks and unit tests, pass locally. The GCash
+pgTAP test could not run because the local Docker network is unavailable. No
 production migration, function deployment, secret change, or checkout
-activation is part of these checks. Local database tests do not verify a
-staging or production integration.
+activation is part of these checks. Local tests do not verify a staging or
+production integration.
 
 Complete and record each gate before requesting production activation:
 
@@ -109,12 +95,9 @@ Complete and record each gate before requesting production activation:
    - Apply the reviewed migration only to a disposable local or dedicated
      staging database. Never pass `--remote` to local database test commands.
    - Run the pgTAP receipt-review test and the full database test suite.
-   - Add/verify database-level cases for malformed or missing transaction
-     fields, explicit non-GCash and ambiguous providers, matching GCash
-     manual-review submissions with null confidence, matched submissions with
-     null confidence, confidence below `0.75` or above `1.0`, mismatched OCR
-     fields, duplicate references, and proof that submission alone never
-     activates Premium.
+   - Verify invalid references, duplicate references across accounts, missing
+     receipts, invalid/future dates, optional transaction time, incorrect
+     amounts, and proof that submission alone never activates Premium.
    - Exercise approval and rejection using valid, expired, consumed, and
      revoked tokens. Verify a token can be used once, the sibling action is
      revoked, approval requires explicit receipt confirmation, rejection
@@ -122,10 +105,8 @@ Complete and record each gate before requesting production activation:
      entitlement.
    - Confirm anon/authenticated roles cannot call privileged RPCs or read
      tokens/notification rows, while `service_role` can call only the intended
-     server-side functions. The current pgTAP file covers RPC grants and
-     confidence-free ambiguous and clearly identified manual review, plus
-     matched-null and out-of-range confidence rejection. It does not by itself
-     prove the full approval/token lifecycle above.
+     server-side functions. Database unique constraints must protect concurrent
+     duplicate submissions.
 
    With the local Supabase stack running and the reviewed migration applied
    locally, run:
@@ -139,19 +120,7 @@ Complete and record each gate before requesting production activation:
    Do not run these commands against a database containing data that must be
    retained unless its effects are understood and authorized.
 
-2. **Verify OCR.space with controlled samples.**
-   - Use a dedicated non-production API key and a small set of authorized,
-     redacted/test receipts; do not upload real customer receipts for testing.
-   - Check clear GCash, likely OCR misread, other-wallet, unknown-provider,
-     missing-time, unsuccessful, and incomplete cases. Confirm only a clearly
-     identified GCash receipt with all required fields can pass the local
-     field checks. OCR.space supplies no confidence, so its results must
-     remain manual-review-only; do not turn that status into automatic
-     approval or infer confidence from text matching.
-   - Record provider errors, timeout behavior, and quota usage without
-     retaining API keys or full receipt contents in logs.
-
-3. **Verify Resend and email review using controlled mailboxes.**
+2. **Verify Resend and payment review using controlled mailboxes.**
    - Configure a non-production API key and a sender verified by Resend.
      Send test messages only to controlled reviewer/customer mailboxes.
    - Verify reviewer-only submission notifications, correct customer status
@@ -161,7 +130,7 @@ Complete and record each gate before requesting production activation:
    - Confirm approval/rejection notification failures remain retryable and
      do not falsely report successful delivery.
 
-4. **Complete non-production end-to-end checkout tests.**
+3. **Complete non-production end-to-end checkout tests.**
    - Use seeded test accounts, plans, QR assets and test payment records.
      Walk through readiness, plan/QR display, request creation, receipt
      upload, submission, review email, explicit approval and rejection,
@@ -172,7 +141,7 @@ Complete and record each gate before requesting production activation:
    - Recheck database permissions, private storage policies, Edge Function
      configuration, email recipients, logs, and rollback/recovery procedures.
 
-5. **Authorize production activation separately.**
+4. **Authorize production activation separately.**
    - Recheck the live migration state, both plan rows and prices, merchant
      instructions, private QR objects and signed reads, production secrets,
      Resend sender status, function versions, and backups/change window.
@@ -207,8 +176,12 @@ Complete and record each gate before requesting production activation:
   approval RPCs, atomically replaces action tokens on retry, and restores the
   missing enabled-plan read policy and review notification trigger observed in
   production. Review its SQL and impact before applying it.
-- The email-review and strict-validation Edge Function changes are local only
-  and have not been deployed.
+- The local migrations
+  `20261112150000_gcash_receipt_manila_time_validation.sql` and
+  `20261112200000_manual_payment_review_without_ocr.sql` update date validation
+  and submission for no-OCR manual review. They have not been deployed.
+- The no-OCR submission, admin payment review, and notification changes are
+  local only and have not been deployed.
 
 ## Required Edge Function configuration
 
@@ -219,14 +192,37 @@ GCASH_PAYMENTS_ENABLED=false
 GCASH_MERCHANT_NAME=
 GCASH_MERCHANT_ACCOUNT=
 GCASH_PAYMENT_INSTRUCTIONS=
-OCR_SPACE_API_KEY=
 RESEND_API_KEY=
+RESEND_EMAIL_MODE=
+RESEND_TEST_RECIPIENT=
 RESEND_FROM_EMAIL=
+PREMIUM_EMAIL_FROM=
+RESEND_VERIFIED_DOMAIN=
+LUMINHAW_APP_URL=https://luminhawofficial.github.io/LUMINHAW-APP/
 ```
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided by Supabase to Edge
-Functions. Keep all service-role and provider keys server-side. The sender must
-be verified with Resend. The only review recipient is
+Functions. Keep `RESEND_API_KEY`, service-role credentials, and all other
+provider keys exclusively in Supabase Edge Function secrets; never put them in
+Flutter defines or client-side code.
+
+`RESEND_EMAIL_MODE` is required and must be explicitly set to `development` or
+`production`; there is no default or production fallback. Development mode uses
+`LUMINHAW <onboarding@resend.dev>` and requires `RESEND_TEST_RECIPIENT` to be
+the email address associated with the Resend account. It routes all queued
+payment-notification test sends only to that address and sends generic content
+without customer/payment details, proof links, or action tokens. Production
+mode requires a valid sender and verified domain.
+
+`RESEND_FROM_EMAIL` is the primary production sender setting;
+`PREMIUM_EMAIL_FROM` is a compatibility fallback, and if both are set they
+must match exactly. The sender display name is normalized to `LUMINHAW`.
+`RESEND_VERIFIED_DOMAIN` must be the exact verified sender domain, and the
+sender's address domain must match it. `LUMINHAW_APP_URL` is the official HTTPS
+app URL and base path. Customer links and the app-hosted payment confirmation
+bridge use this value. The bridge keeps action tokens in the URL fragment,
+removes the fragment from browser history before use, and sends the token in a
+POST body to the configured Edge Function. The only review recipient is
 `luminhawofficial@gmail.com`.
 
 The email-action function is intentionally configured with JWT verification
@@ -261,7 +257,7 @@ supabase --experimental storage cp --content-type image/jpeg --remote=ccxzjjsxgg
   .\supabase\private-assets\gcash\GCash-MyQR-499.PNG.jpg `
   ss:///gcash-payment-assets/plans/GCash-MyQR-499.PNG.jpg
 
-# Only after owner-provided, verified Resend/OCR.space credentials and merchant
+# Only after owner-provided, verified Resend credentials and merchant
 # details are available in a protected local file (never commit that file):
 supabase secrets set --env-file .\supabase\.env.production `
   --remote=ccxzjjsxggrxiaaehxxu
@@ -269,16 +265,15 @@ supabase secrets set --env-file .\supabase\.env.production `
 supabase functions deploy create-premium-payment --remote=ccxzjjsxggrxiaaehxxu
 supabase functions deploy submit-premium-payment --remote=ccxzjjsxggrxiaaehxxu
 supabase functions deploy get-premium-payment-status --remote=ccxzjjsxggrxiaaehxxu
+supabase functions deploy admin-api --remote=ccxzjjsxggrxiaaehxxu
 supabase functions deploy payment-email-action --no-verify-jwt `
-  --remote=ccxzjjsxggrxiaaehxxu
-supabase functions deploy admin-review-premium-payment `
   --remote=ccxzjjsxggrxiaaehxxu
 ```
 
 The legacy admin-review function is retained as a `410 Gone` response for
 compatibility; it no longer exposes dashboard operations. Do not enable either
 plan or set `GCASH_PAYMENTS_ENABLED=true` until the QR assets, merchant
-configuration, OCR, email delivery, and email actions are verified and the
+configuration, email delivery, and review actions are verified and the
 owner explicitly authorizes activation. Keep `GCASH_PAYMENTS_ENABLED=false`
 and both plan rows disabled throughout migration, storage, and function rollout.
 Afterward, verify the migration list, private object metadata and signed reads,
@@ -302,13 +297,14 @@ deno check supabase/functions/create-premium-payment/index.ts
 deno check supabase/functions/submit-premium-payment/index.ts
 deno check supabase/functions/get-premium-payment-status/index.ts
 deno check supabase/functions/payment-email-action/index.ts
-deno check supabase/functions/admin-review-premium-payment/index.ts
+deno check supabase/functions/admin-api/index.ts
 deno test --allow-all supabase/functions/_shared
 ```
 
-The OCR.space and Resend adapter tests inject mocked fetch responses. They
-verify request shape and provider error handling without using credentials or
-contacting either provider; they are not live delivery/OCR integration tests.
+The Resend adapter tests inject mocked fetch responses. They verify request
+shape and provider error handling without using credentials or contacting the
+provider; they are not live delivery integration tests. No OCR or AI provider
+is used for receipt handling.
 
 For local HTTP testing, start the local Supabase stack and serve the functions
 with local-only provider settings. Supabase CLI loads the git-ignored
@@ -340,8 +336,7 @@ flutter analyze
 flutter test test/premium_payment_service_test.dart
 ```
 
-These local checks cannot establish that OCR.space classifies genuine receipts
-accurately or that Resend delivers email actions in production. Complete the
-production-readiness checklist above with an approved non-production setup
-before enabling payments. Never use fabricated receipt results as successful
-integration tests.
+These local checks cannot establish that Resend delivers email actions in
+production. Complete the production-readiness checklist above with an approved
+non-production setup before enabling payments. Never use a receipt screenshot
+or manually entered values as proof that funds were received.

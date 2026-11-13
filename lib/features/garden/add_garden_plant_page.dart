@@ -69,6 +69,7 @@ class _AddGardenPlantPageState extends State<AddGardenPlantPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
     final name = _nameController.text.trim();
+    final initialObservation = _notesController.text.trim();
     try {
       await _store.load();
       if (_store.gardenPlantNames.value.contains(name)) {
@@ -80,6 +81,8 @@ class _AddGardenPlantPageState extends State<AddGardenPlantPage> {
         details: {
           'plantingDate': _plantingDate.toIso8601String().split('T').first,
           'growthStage': _growthStage,
+          if (initialObservation.isNotEmpty)
+            'initialObservation': initialObservation,
         },
       );
       if (!added) {
@@ -90,7 +93,7 @@ class _AddGardenPlantPageState extends State<AddGardenPlantPage> {
       final heightText = _heightController.text.trim();
       if (_photoBytes != null ||
           heightText.isNotEmpty ||
-          _notesController.text.trim().isNotEmpty) {
+          initialObservation.isNotEmpty) {
         try {
           await _store.saveGrowthEntry(
             GrowthEntry(
@@ -99,7 +102,7 @@ class _AddGardenPlantPageState extends State<AddGardenPlantPage> {
               activity: 'Observation',
               date: _plantingDate,
               heightCm: heightText.isEmpty ? null : double.parse(heightText),
-              notes: _notesController.text.trim(),
+              notes: initialObservation,
             ),
             photoBytes: _photoBytes,
           );

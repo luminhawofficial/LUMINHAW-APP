@@ -5,6 +5,7 @@ import {
   jsonResponse,
   readJsonBody,
 } from "../_shared/http.ts";
+import { bestPlantIdentificationSuggestion } from "../_shared/plant-identification.ts";
 
 type LocalizedNames = {
   tagalog: string | null;
@@ -90,7 +91,8 @@ async function findLocalizedNames(
     }
     localizedNameCache.set(cacheKey, {
       names,
-      expiresAt: Date.now() + (names.tagalog || names.bisaya ? 86_400_000 : 600_000),
+      expiresAt: Date.now() +
+        (names.tagalog || names.bisaya ? 86_400_000 : 600_000),
     });
     return names;
   } catch (error) {
@@ -162,17 +164,28 @@ async function handleRequest(request: Request): Promise<Response> {
         const result = await upstream.json();
         const suggestions = result.result?.classification?.suggestions;
         if (Array.isArray(suggestions) && suggestions.length > 0) {
-          const scientificName =
-            suggestions[0]?.details?.scientific_name ??
-            suggestions[0]?.name;
+          const suggestion = bestPlantIdentificationSuggestion(suggestions);
+          const details = suggestion?.details !== null &&
+              typeof suggestion?.details === "object" &&
+              !Array.isArray(suggestion.details)
+            ? suggestion.details as Record<string, unknown>
+            : undefined;
+          const scientificName = (typeof details?.scientific_name === "string"
+            ? details.scientific_name
+            : undefined) ??
+            (typeof suggestion?.name === "string"
+              ? suggestion.name
+              : undefined);
           const localizedNames = typeof scientificName === "string"
             ? await findLocalizedNames(scientificName)
             : { tagalog: null, bisaya: null };
-          return jsonResponse({
-            ...result,
-            provider: "plant.id",
-            localizedNames,
-          });
+          if (suggestion) {
+            return jsonResponse({
+              ...result,
+              provider: "plant.id",
+              localizedNames,
+            });
+          }
         }
         plantIdReturnedNoMatch = true;
         console.error("Plant.ID returned no identification suggestions.");

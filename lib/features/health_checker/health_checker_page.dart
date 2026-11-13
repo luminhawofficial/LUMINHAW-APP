@@ -32,7 +32,27 @@ class _HealthCheckerPageState extends State<HealthCheckerPage> {
   @override
   void initState() {
     super.initState();
+    PlanEntitlementStore.instance.tier.addListener(_handleEntitlementChange);
     _refreshEntitlement();
+  }
+
+  @override
+  void dispose() {
+    PlanEntitlementStore.instance.tier.removeListener(_handleEntitlementChange);
+    super.dispose();
+  }
+
+  void _handleEntitlementChange() {
+    if (!mounted) return;
+    setState(() {
+      _entitlementLoaded = true;
+      _entitlementUnavailable = false;
+      if (PlanEntitlementStore.instance.hasPremiumAccess &&
+          _errorMessage?.startsWith('Could not verify Premium status:') ==
+              true) {
+        _errorMessage = null;
+      }
+    });
   }
 
   @override

@@ -3,7 +3,6 @@ import {
   isExpectedGcashPlan,
   isResponse,
   normalizePhilippineMobileNumber,
-  OCR_SPACE_MANUAL_REVIEW_SUPPORTED,
   paymentConfigurationIssues,
   paymentReadinessIssues,
   paymentServiceClient,
@@ -94,14 +93,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
       }),
     )
   ).filter((code) => code !== null);
-  const receiptValidationConfigured = Boolean(
-    Deno.env.get("OCR_SPACE_API_KEY")?.trim(),
-  );
   const readinessIssues = paymentReadinessIssues({
     configurationIssues: paymentConfigurationIssues(),
-    receiptValidationConfigured,
-    receiptValidationManualReviewSupported:
-      OCR_SPACE_MANUAL_REVIEW_SUPPORTED,
     plans: planRows,
     unavailableQrPlanCodes,
   });

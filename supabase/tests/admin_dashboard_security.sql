@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(19);
 
 select ok(
   not has_table_privilege('anon', 'public.admin_roles', 'SELECT')
@@ -135,10 +135,10 @@ select ok(
 );
 
 select ok(
-  position('final active Super Admin' in pg_get_functiondef(
+  position('final active Admin' in pg_get_functiondef(
     'public.admin_set_role(uuid, uuid, text, text)'::regprocedure
   )) > 0,
-  'role assignment protects the final active Super Admin'
+  'role assignment protects the final active Admin'
 );
 
 select ok(
@@ -146,6 +146,56 @@ select ok(
     'public.admin_review_premium_payment(uuid, uuid, text, boolean, text)'::regprocedure
   )) > 0,
   'payment approval prevents an administrator approving their own payment'
+);
+
+select ok(
+  position('role = ''admin''' in pg_get_functiondef(
+    'public.admin_review_premium_payment(uuid, uuid, text, boolean, text)'::regprocedure
+  )) > 0
+  and position('status = ''active''' in pg_get_functiondef(
+    'public.admin_review_premium_payment(uuid, uuid, text, boolean, text)'::regprocedure
+  )) > 0
+  and position('role = ''super_admin''' in pg_get_functiondef(
+    'public.admin_review_premium_payment(uuid, uuid, text, boolean, text)'::regprocedure
+  )) = 0,
+  'only active Admins can review payments'
+);
+
+select ok(
+  position('role = ''admin''' in pg_get_functiondef(
+    'public.admin_set_role(uuid, uuid, text, text)'::regprocedure
+  )) > 0
+  and position('role = ''super_admin''' in pg_get_functiondef(
+    'public.admin_set_role(uuid, uuid, text, text)'::regprocedure
+  )) = 0
+  and position('Only one active Admin account is allowed.' in pg_get_functiondef(
+    'public.admin_set_role(uuid, uuid, text, text)'::regprocedure
+  )) > 0,
+  'role management is Admin-only and enforces a single active Admin'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
+      and indexname = 'admin_roles_one_active_admin_idx'
+      and indexdef ilike '%unique%'
+      and indexdef ilike '%role%'
+      and indexdef ilike '%active%'
+  ),
+  'a unique index enforces at most one active Admin'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.admin_roles'::regclass
+      and conname = 'admin_roles_role_check'
+      and pg_get_constraintdef(oid) not ilike '%super_admin%'
+  ),
+  'the administrator role constraint no longer permits Super Admin'
 );
 
 select * from finish();

@@ -1,5 +1,22 @@
 project_id = "ccxzjjsxggrxiaaehxxu"
 
+[api]
+port = 55321
+
+[db]
+port = 55322
+shadow_port = 55320
+
+[studio]
+port = 55323
+
+[analytics]
+enabled = false
+port = 55327
+
+[local_smtp]
+port = 55324
+
 [auth]
 additional_redirect_urls = [
   "luminhaw://*",

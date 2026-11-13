@@ -5,6 +5,8 @@ their biology and care, maintaining a garden journal, and tracking growth.
 Flutter provides the mobile and desktop UI; Supabase provides authentication,
 owner-scoped storage, and server-side provider integrations.
 
+**Web app:** [Open LUMINHAW](https://luminhawofficial.github.io/LUMINHAW-APP/)
+
 > **Current state:** Live plant results require configured and deployed
 > Supabase Edge Functions. Provider keys belong in Supabase secrets, never in
 > the Flutter app or source control. Review the
@@ -37,7 +39,6 @@ actor Perenual
 actor Trefle
 actor GBIF
 actor "Gemini AI" as Gemini
-actor "OCR.space" as OCR
 actor Resend
 
 rectangle "LUMINHAW plant-care app" {
@@ -138,7 +139,7 @@ PlantDetails ..> Trefle : exact-match taxonomy
 CareGuide --> Perenual
 Health --> PlantID
 AIChat --> Gemini
-Pay --> OCR
+Pay --> Database : manual reference/date/amount/receipt checks
 Pay --> Resend : payment email
 Review --> Resend : approval email
 Review --> Database
@@ -161,9 +162,11 @@ Activate --> Database
   features and removes the Basic plan's daily LUMIN AI prompt limit in every
   build, including debug. Testing Premium access requires an active verified
   entitlement.
-- **Payment reviewer:** Reviews manually submitted receipts. Approval and plan
-  activation are server-controlled; manual checkout remains disabled until its
-  merchant and production configuration are approved.
+- **Payment reviewer:** Authorized administrators compare manually entered
+  transaction details with private receipts and verify funds in merchant or
+  provider records. Approval and plan activation are server-controlled; manual
+  checkout remains disabled until its merchant and production configuration are
+  approved.
 
 ## Feature guide
 
@@ -177,13 +180,13 @@ Activate --> Database
 | Plant library | Basic users search the live catalog and view basic information; advanced species biology and extended care details are Premium-gated. Configured search providers are Perenual, Trefle, then GBIF. Eligible GBIF photos include attribution/license/source metadata. | `lib/features/library/library_page.dart`, `lib/core/services/plant_catalog_service.dart`, `supabase/functions/plant-catalog/index.ts` |
 | Plant details and saved details | Opens plant details and lets users save them. Basic details include names, family/genus/species, basic description and basic care; advanced information requires Premium. | `lib/features/library/library_page.dart`, `lib/core/services/saved_plant_details_store.dart`, `lib/features/settings/saved_plant_details_page.dart` |
 | My Garden | Adds and removes tracked plants. Signed-out data stays on-device; verified signed-in data uses owner-scoped Supabase records. Existing device-only data is not automatically transferred to an account. | `lib/features/garden/garden_page.dart`, `lib/features/garden/add_garden_plant_page.dart`, `lib/core/services/local_plant_data_store.dart` |
-| Care activities and growth tracker | Available on Basic. Records watering, fertilizing, pruning, repotting, growth observations, and optional measurements/photos. After a care activity is saved, LUMIN AI uses its note to suggest a next step (one suggestion per plant per UTC day on Basic; four on Premium). Basic suggestions count toward Basic's 10 daily AI requests. General reminders and cautions remain rules-based. Opt-in local notifications deliver daily watering and stage-based fertilizer reminders at 9:00 AM. | `lib/features/growth_tracker/growth_tracker_page.dart`, `lib/core/services/local_plant_data_store.dart`, `lib/core/services/plant_notification_service.dart`, `supabase/functions/assistant-chat/index.ts` |
+| Care activities and growth tracker | Available on Basic. Records watering, fertilizing, pruning, repotting, growth observations, and optional measurements/photos; observation photos appear in the plant's growth journal. After a care activity is saved, LUMIN AI uses its note to suggest a next step (one suggestion per plant per UTC day on Basic; four on Premium). Basic suggestions count toward Basic's 10 daily AI requests. General reminders and cautions remain rules-based. Opt-in local notifications deliver daily watering and stage-based fertilizer reminders at 9:00 AM. | `lib/features/growth_tracker/growth_tracker_page.dart`, `lib/core/services/local_plant_data_store.dart`, `lib/core/services/plant_notification_service.dart`, `supabase/functions/assistant-chat/index.ts` |
 | Detailed care guide | Premium feature. Loads provider-supplied species care data from an exact Perenual species match; missing provider fields are omitted. Basic includes only the basic care instructions shown with plant information. | `lib/features/care_guide/care_guide_page.dart`, `lib/core/services/plant_care_service.dart`, `supabase/functions/plant-care/index.ts` |
 | Plant health checker | With explicit consent, uploads a photo to private account storage and requests a Plant.ID health assessment. Results are suggestions, not a medical or botanical diagnosis. The server requires verified account and Premium entitlement in production. | `lib/features/health_checker/health_checker_page.dart`, `lib/core/services/plant_health_service.dart`, `supabase/functions/plant-health/index.ts` |
 | LUMIN AI | Text assistant for plant-care questions and automatic care-activity suggestions. Verified Basic accounts can send 10 requests per UTC day and get one suggestion per plant per UTC day; Premium accounts get up to four suggestions per plant per day. The server enforces these limits. Chat and suggestions do not accept images. | `lib/features/ai_assistant/assistant_page.dart`, `lib/core/services/gemini_assistant_service.dart`, `supabase/functions/assistant-chat/index.ts` |
 | Notifications and settings | Opt-in local notifications remind users about due watering and stage-based fertilizer checks. The notification center also displays published app updates, maintenance notices, feature announcements, and general account notices from the `system_announcements` table. Announcements are public app-wide content; do not put private account data in this table. | `lib/features/settings/settings_page.dart`, `lib/core/services/plant_notification_service.dart`, `supabase/migrations/20261110100000_system_announcements.sql` |
 | Profile and settings | Updates display name and profile photo; opens subscription, scan history, saved plant details, health, growth, notification, privacy, and account settings. Care-reminder preferences are stored locally. | `lib/features/profile/profile_page.dart`, `lib/features/profile/edit_profile_page.dart`, `lib/features/settings/settings_page.dart` |
-| Scan history | Lists account-owned scan records and their results; sign-in is required for account history. | `lib/features/scanner/scan_history_page.dart`, `lib/core/services/scan_history_service.dart` |
+| Scan history | Lists account-owned scan records with plant names and identification details; users can open details and delete individual scans. Sign-in is required for account history. | `lib/features/scanner/scan_history_page.dart`, `lib/core/services/scan_history_service.dart` |
 | Subscription and payment | Displays plans and entitlement status. Manual payment/receipt review has server workflows, but checkout is disabled pending approved merchant configuration. Google Play Billing is not implemented. | `lib/features/subscription/`, `lib/core/services/plan_entitlement_store.dart`, `lib/core/services/premium_payment_service.dart`, `docs/premium-payments.md` |
 | Privacy and About | In-app description of the app, data handling, external providers, subscriptions, and usage. Production release still needs a reviewed, publicly hosted privacy policy. | `lib/features/information/information_pages.dart` |
 
@@ -257,6 +260,11 @@ flutter pub get
 flutter run
 ```
 
+The Flutter web app is deployed to GitHub Pages when changes are pushed to
+`main`. The build workflow is in
+[`deploy-web.yml`](.github/workflows/deploy-web.yml). The repository's Pages
+source is configured to **GitHub Actions**.
+
 For a different Supabase project, provide its public URL and publishable key at
 run/build time:
 
@@ -307,10 +315,11 @@ template's browser fallback works on devices without the app. The template's
 fallback verify endpoint targets the currently linked project; update its
 project URL if linking a different Supabase project.
 
-There is no deployed Flutter web origin configured for this project yet, so
-the browser fallback will only work after the web app is hosted and the
-production Site URL and allowlist are updated. Do not push this template to the
-production project before that URL is configured.
+The GitHub Pages origin is
+`https://luminhawofficial.github.io/LUMINHAW-APP/`. After its first deployment,
+set the Supabase Site URL to this origin and add it (including the
+`?flow=password-reset` callback) to the allowed redirect URLs before enabling
+the browser fallback in production.
 
 For local Edge Function development, create a private local environment file
 from the placeholders in

@@ -272,7 +272,17 @@ class _PlantGridCard extends StatelessWidget {
               strokeWidth: 2,
             ),
           )
-        : const Icon(Icons.eco_outlined, color: AppColors.green, size: 40),
+        : const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.eco_outlined, color: AppColors.green, size: 40),
+              SizedBox(height: 4),
+              Text(
+                'No photo available',
+                style: TextStyle(color: AppColors.muted, fontSize: 10),
+              ),
+            ],
+          ),
   );
 }
 

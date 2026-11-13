@@ -105,6 +105,40 @@ class _ScanResultPageState extends State<ScanResultPage> {
                     fit: BoxFit.cover,
                   ),
                 ),
+              if (scanResult?.hasLowConfidence == true) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8E1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFFE082)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: Color(0xFF8A5A00),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Low provider match score. This identification may be '
+                          'inaccurate. Try a clearer photo showing the leaves, '
+                          'flowers, or fruit, or verify the result with another '
+                          'reliable source.',
+                          style: TextStyle(
+                            color: Color(0xFF704800),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               Text(
                 plant.commonName,
@@ -167,14 +201,22 @@ class _ScanResultPageState extends State<ScanResultPage> {
               ),
               if (scanResult?.probability case final probability?)
                 _ResultField(
-                  label: 'Match confidence',
+                  label: 'Provider match score',
                   value: '${(probability * 100).toStringAsFixed(1)}%',
+                ),
+              if (scanResult?.probability != null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Provider-reported score; not a measured accuracy rate.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 11),
+                  ),
                 ),
               const SizedBox(height: 8),
               Text(
                 scanResult == null
                     ? 'Identification results are estimates. Check important plant decisions with a reliable botanical source.'
-                    : 'Plant.ID identification estimate. Confirm important plant decisions with a reliable botanical source.',
+                    : 'Automated plant identification is an estimate. Confirm important plant decisions with a reliable botanical source.',
                 style: TextStyle(color: AppColors.muted, fontSize: 12),
               ),
               if (scanResult?.description case final description?) ...[

@@ -175,7 +175,10 @@ class _ScannerPageState extends State<ScannerPage> {
         await Navigator.pushNamed(context, '/result', arguments: result);
       }
     } catch (error) {
-      _showMessage('Could not identify the plant: $error');
+      _showMessage(
+        'Could not identify the plant: '
+        '${error.toString().replaceFirst('Bad state: ', '')}',
+      );
     } finally {
       if (mounted) setState(() => _isIdentifying = false);
     }

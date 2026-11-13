@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -74,9 +73,12 @@ class PremiumPaymentRecord {
     required this.createdAt,
     this.planCode,
     this.transactionReference,
+    this.transactionDate,
+    this.transactionTime,
     this.customerFullName,
     this.customerMobileNumber,
     this.reviewNotes,
+    this.rejectionReason,
     this.entitlementExpiresAt,
   });
 
@@ -89,9 +91,12 @@ class PremiumPaymentRecord {
   final DateTime createdAt;
   final String? planCode;
   final String? transactionReference;
+  final String? transactionDate;
+  final String? transactionTime;
   final String? customerFullName;
   final String? customerMobileNumber;
   final String? reviewNotes;
+  final String? rejectionReason;
   final DateTime? entitlementExpiresAt;
 
   factory PremiumPaymentRecord.fromJson(Map<String, dynamic> json) {
@@ -123,9 +128,12 @@ class PremiumPaymentRecord {
       createdAt: date,
       planCode: planCode is String ? planCode : null,
       transactionReference: json['merchant_transaction_reference'] as String?,
+      transactionDate: json['payment_date'] as String?,
+      transactionTime: json['payment_time'] as String?,
       customerFullName: json['customer_full_name'] as String?,
       customerMobileNumber: json['customer_mobile_number'] as String?,
       reviewNotes: json['review_notes'] as String?,
+      rejectionReason: json['rejection_reason'] as String?,
       entitlementExpiresAt: json['entitlement_expires_at'] is String
           ? DateTime.tryParse(json['entitlement_expires_at'] as String)
           : null,
@@ -265,40 +273,39 @@ class PremiumPaymentService {
     required String requestId,
     required String transactionReference,
     required DateTime paymentDate,
-    required XFile proof,
+    required String? paymentTime,
+    required int amountCentavos,
+    required Uint8List proofBytes,
+    required String proofFileName,
+    required String contentType,
   }) async {
     final userId = SupabaseAuthService.currentUser?.id;
     if (userId == null) {
       throw const PremiumPaymentException('Sign in to submit a payment.');
     }
     final normalizedReference = transactionReference.replaceAll(' ', '');
-    if (!RegExp(r'^\d{13}$').hasMatch(normalizedReference)) {
+    if (!RegExp(r'^[0-9 ]+$').hasMatch(transactionReference) ||
+        !RegExp(r'^\d{13}$').hasMatch(normalizedReference)) {
       throw const PremiumPaymentException(
         'Your reference number must contain exactly 13 digits in the format 0000 000 000000.',
       );
     }
-    final extension = proof.name.split('.').last.toLowerCase();
-    final contentType = _allowedProofTypes[extension];
-    if (contentType == null) {
-      throw const PremiumPaymentException(
-        'Choose a JPEG or PNG payment screenshot.',
-      );
+    if (paymentTime != null &&
+        !RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(paymentTime)) {
+      throw const PremiumPaymentException('Enter a valid transaction time.');
     }
-    if (proof.mimeType != null && proof.mimeType != contentType) {
-      throw const PremiumPaymentException(
-        'The screenshot format could not be verified. Select a JPEG or PNG image.',
-      );
+    if (amountCentavos <= 0) {
+      throw const PremiumPaymentException('Enter a valid payment amount.');
     }
-    final fileLength = await proof.length();
-    if (fileLength == 0 || fileLength > maximumProofBytes) {
+    if (proofBytes.isEmpty || proofBytes.length > maximumProofBytes) {
       throw const PremiumPaymentException(
         'Payment screenshots must be at most 5 MB.',
       );
     }
-    final bytes = await proof.readAsBytes();
-    if (bytes.length != fileLength || bytes.length > maximumProofBytes) {
+    final extension = proofFileName.split('.').last.toLowerCase();
+    if (_allowedProofTypes[extension] != contentType) {
       throw const PremiumPaymentException(
-        'Payment screenshots must be at most 5 MB.',
+        'Choose a valid JPG or PNG receipt image.',
       );
     }
     final random = math.Random.secure();
@@ -310,7 +317,7 @@ class PremiumPaymentService {
           .from(proofBucket)
           .uploadBinary(
             proofPath,
-            bytes,
+            proofBytes,
             fileOptions: FileOptions(contentType: contentType, upsert: false),
           );
     } on StorageException {
@@ -333,9 +340,8 @@ class PremiumPaymentService {
           '${paymentDate.year.toString().padLeft(4, '0')}-'
           '${paymentDate.month.toString().padLeft(2, '0')}-'
           '${paymentDate.day.toString().padLeft(2, '0')}',
-      'paymentTime':
-          '${paymentDate.hour.toString().padLeft(2, '0')}:'
-          '${paymentDate.minute.toString().padLeft(2, '0')}',
+      'paymentTime': paymentTime,
+      'amountCentavos': amountCentavos,
       'proofStoragePath': proofPath,
     });
   }
@@ -349,26 +355,13 @@ class PremiumPaymentService {
       'That Premium plan is not currently available.',
     'payment_request_already_open' => 'You already have an open payment request. Continue or check its status below.',
     'payment_request_not_cancellable' => 'This request can no longer be changed because it has already been submitted or is no longer pending. Refresh to see its latest status.',
-    'receipt_validation_unavailable' =>
-      'Receipt validation is temporarily unavailable. Please try again later.',
     'receipt_missing' =>
       'Upload your GCash receipt or take a picture of your receipt.',
-    'not_a_receipt' => 'The uploaded image does not appear to be a GCash receipt. Please upload or take a clear picture of your official GCash receipt.',
-    'not_gcash_receipt' => 'The uploaded image does not appear to be a GCash receipt. Please upload or take a clear picture of your official GCash receipt.',
-    'receipt_blurry' => 'The receipt is blurry or the transaction details cannot be read clearly. Please take a clear, well-lit photo of the receipt, or send it to luminhawofficial@gmail.com for assistance.',
-    'receipt_unreadable' => 'The receipt is blurry or the transaction details cannot be read clearly. Please take a clear, well-lit photo of the receipt, or send it to luminhawofficial@gmail.com for assistance.',
-    'receipt_incomplete' => 'The receipt is blurry or the transaction details cannot be read clearly. Please take a clear, well-lit photo of the receipt, or send it to luminhawofficial@gmail.com for assistance.',
+    'not_a_receipt' => 'Upload a valid JPG or PNG receipt image, up to 5 MB.',
     'reference_invalid' => 'Your reference number must contain exactly 13 digits in the format 0000 000 000000.',
-    'reference_mismatch' => 'The reference number you entered does not match the reference found on the receipt. Please check your receipt and correct it.',
     'wrong_payment_amount' =>
       'The payment amount does not match your selected subscription plan.',
-    'payment_date_mismatch' =>
-      'The transaction date does not match the date on your GCash receipt.',
-    'transaction_not_successful' =>
-      'The GCash receipt does not show a successful transaction.',
-    'duplicate_reference' || 'duplicate_payment_reference' =>
-      'This GCash reference number has already been submitted or used.',
-    'receipt_validation_inconclusive' => 'The receipt is blurry or the transaction details cannot be read clearly. Please take a clear, well-lit photo of the receipt, or send it to luminhawofficial@gmail.com for assistance.',
+    'duplicate_reference' || 'duplicate_payment_reference' => 'This GCash reference number has already been submitted. Please check your transaction details.',
     'payment_submission_unavailable' ||
     'payment_status_unavailable' ||
     'payment_service_unavailable' ||
@@ -405,13 +398,30 @@ class PremiumPaymentService {
     'gcash_payment_instructions_missing' =>
       'Set GCASH_PAYMENT_INSTRUCTIONS to the approved payment instructions.',
     'resend_api_key_missing' => 'Set RESEND_API_KEY for payment notifications.',
+    'resend_email_mode_missing' =>
+      'Set RESEND_EMAIL_MODE to development or production.',
+    'resend_email_mode_invalid' =>
+      'RESEND_EMAIL_MODE must be development or production.',
+    'resend_test_recipient_missing' =>
+      'Checkout is unavailable because the test email inbox is not configured. Do not send payment.',
+    'resend_test_recipient_invalid' =>
+      'RESEND_TEST_RECIPIENT must be a valid email address.',
     'resend_sender_missing' =>
       'Set RESEND_FROM_EMAIL (or PREMIUM_EMAIL_FROM) to a verified sender.',
+    'resend_sender_configuration_conflict' =>
+      'RESEND_FROM_EMAIL and PREMIUM_EMAIL_FROM must match exactly.',
+    'resend_sender_invalid' =>
+      'Set a valid RESEND_FROM_EMAIL on the verified Resend domain.',
+    'resend_sender_domain_mismatch' =>
+      'The configured sender address must use RESEND_VERIFIED_DOMAIN.',
+    'resend_verified_domain_missing' =>
+      'Set RESEND_VERIFIED_DOMAIN to the domain verified in Resend.',
+    'luminhaw_app_url_missing' =>
+      'Set LUMINHAW_APP_URL to the official HTTPS LUMINHAW app URL.',
+    'luminhaw_app_url_invalid' =>
+      'LUMINHAW_APP_URL must be an HTTPS URL without a query or fragment.',
     'supabase_url_missing' =>
       'SUPABASE_URL is missing from the Edge Function runtime.',
-    'receipt_validation_not_configured' =>
-      'Set OCR_SPACE_API_KEY to configure receipt text extraction.',
-    'receipt_validation_manual_review_unsupported' => 'The configured OCR provider cannot safely route receipts without a confidence score to manual review.',
     'monthly_plan_missing' => 'The 30-day Premium plan is missing.',
     'yearly_plan_missing' => 'The 365-day Premium plan is missing.',
     'monthly_plan_disabled' => 'The 30-day Premium plan is disabled.',
@@ -563,7 +573,11 @@ abstract interface class PremiumPaymentProvider {
     required String requestId,
     required String transactionReference,
     required DateTime paymentDate,
-    required XFile proof,
+    required String? paymentTime,
+    required int amountCentavos,
+    required Uint8List proofBytes,
+    required String proofFileName,
+    required String contentType,
   });
 }
 
@@ -597,12 +611,20 @@ class ManualGcashPaymentProvider implements PremiumPaymentProvider {
     required String requestId,
     required String transactionReference,
     required DateTime paymentDate,
-    required XFile proof,
+    required String? paymentTime,
+    required int amountCentavos,
+    required Uint8List proofBytes,
+    required String proofFileName,
+    required String contentType,
   }) => PremiumPaymentService.submitPayment(
     requestId: requestId,
     transactionReference: transactionReference,
     paymentDate: paymentDate,
-    proof: proof,
+    paymentTime: paymentTime,
+    amountCentavos: amountCentavos,
+    proofBytes: proofBytes,
+    proofFileName: proofFileName,
+    contentType: contentType,
   );
 }
 

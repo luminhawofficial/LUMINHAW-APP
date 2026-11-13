@@ -1,6 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:luminhaw/core/services/premium_payment_service.dart';
 import 'package:luminhaw/features/subscription/premium_payment_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -247,6 +248,10 @@ class _TestPaymentProvider implements PremiumPaymentProvider {
     required String requestId,
     required String transactionReference,
     required DateTime paymentDate,
-    required XFile proof,
+    required String? paymentTime,
+    required int amountCentavos,
+    required Uint8List proofBytes,
+    required String proofFileName,
+    required String contentType,
   }) async => {};
 }

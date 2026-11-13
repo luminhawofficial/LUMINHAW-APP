@@ -3,6 +3,7 @@ import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/core/widgets/growth_entry_photo.dart';
 import 'package:luminhaw/features/ai_assistant/lumin_assistant_overlay.dart';
 import 'package:luminhaw/features/garden/garden_page.dart';
 import 'package:luminhaw/features/library/library_page.dart';
@@ -383,9 +384,9 @@ class _PlantPreview extends StatelessWidget {
                   SizedBox(
                     height: 78,
                     width: 116,
-                    child: PlantPhoto(
-                      asset: plant.image,
-                      imageUrl: plant.imageUrl,
+                    child: PlantCoverPhoto(
+                      plant: plant,
+                      width: 116,
                       height: 78,
                     ),
                   ),

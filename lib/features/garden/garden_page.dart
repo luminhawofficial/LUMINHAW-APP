@@ -4,6 +4,7 @@ import 'package:luminhaw/core/models/plant_record.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plant_notification_service.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/core/widgets/growth_entry_photo.dart';
 
 class GardenPage extends StatefulWidget {
   const GardenPage({super.key});
@@ -160,9 +161,9 @@ class _GardenContents extends StatelessWidget {
                       SizedBox(
                         width: 88,
                         height: 88,
-                        child: PlantPhoto(
-                          asset: plant.image,
-                          imageUrl: plant.imageUrl,
+                        child: PlantCoverPhoto(
+                          plant: plant,
+                          width: 88,
                           height: 88,
                         ),
                       ),
@@ -191,6 +192,16 @@ class _GardenContents extends StatelessWidget {
                             if (plant.plantingDate != null)
                               Text(
                                 'Planted ${plant.plantingDate}',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            if (plant.initialObservation != null)
+                              Text(
+                                'Initial observation: ${plant.initialObservation}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: AppColors.muted,
                                   fontSize: 10,

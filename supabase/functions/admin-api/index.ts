@@ -2,15 +2,12 @@ import {
   createClient,
   type SupabaseClient,
 } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  authenticatedUserId,
-  enforceRateLimit,
-} from "../_shared/auth.ts";
+import { authenticatedUserId, enforceRateLimit } from "../_shared/auth.ts";
 import { isValidAnnouncementSchedule } from "../_shared/announcements.ts";
 import { deliverPaymentNotification } from "../_shared/payment-email.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
 
-type AdminRole = "super_admin" | "admin" | "moderator";
+type AdminRole = "admin" | "moderator";
 
 type AdminContext = {
   userId: string;
@@ -66,13 +63,19 @@ async function adminContext(request: Request): Promise<
     .maybeSingle();
   if (error) {
     console.error("Admin role lookup failed:", error.code);
-    return jsonResponse({ error: { code: "admin_authorization_unavailable" } }, 503);
+    return jsonResponse(
+      { error: { code: "admin_authorization_unavailable" } },
+      503,
+    );
   }
   if (
     !assignment || assignment.status !== "active" ||
-    !["super_admin", "admin", "moderator"].includes(assignment.role)
+    !["admin", "moderator"].includes(assignment.role)
   ) {
-    return jsonResponse({ error: { code: "administrator_access_required" } }, 403);
+    return jsonResponse(
+      { error: { code: "administrator_access_required" } },
+      403,
+    );
   }
 
   return {
@@ -103,24 +106,67 @@ async function writeAudit(
   return true;
 }
 
-async function listPayments(context: AdminContext): Promise<Response> {
-  if (!hasRole(context.role, ["super_admin"])) {
+async function listPayments(
+  context: AdminContext,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  if (!hasRole(context.role, ["admin"])) {
     return jsonResponse({ error: { code: "insufficient_role" } }, 403);
   }
 
-  const { data: payments, error } = await context.client
-    .from("premium_payment_requests")
-    .select(
-      "id, user_id, payment_method, amount_centavos, currency, merchant_transaction_reference, payment_date, payment_time, proof_storage_path, payment_status, review_notes, rejection_reason, ocr_status, ocr_confidence, customer_full_name, customer_mobile_number, customer_email, reviewed_by, reviewed_by_email, reviewed_at, entitlement_expires_at, created_at, payment_plans(code, name, duration_days)",
-    )
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (error) {
-    console.error("Admin payment query failed:", error.code);
-    return jsonResponse({ error: { code: "payment_records_unavailable" } }, 503);
+  const status = typeof body.status === "string" ? body.status : "all";
+  const rawReference = typeof body.reference === "string"
+    ? body.reference.trim()
+    : "";
+  const reference = rawReference.replaceAll(" ", "");
+  const offset = Number.isInteger(body.offset) ? Number(body.offset) : 0;
+  const limit = Number.isInteger(body.limit) ? Number(body.limit) : 50;
+  if (
+    !["all", "pending", "approved", "rejected"].includes(status) ||
+    (rawReference !== "" &&
+      (!/^[0-9 ]+$/.test(rawReference) ||
+        !/^\d{1,13}$/.test(reference))) ||
+    offset < 0 ||
+    offset > 100_000 ||
+    limit < 1 ||
+    limit > 100
+  ) {
+    return jsonResponse({ error: { code: "invalid_payment_query" } }, 400);
   }
 
-  const userIds = [...new Set((payments ?? []).map((payment) => payment.user_id))];
+  let paymentQuery = context.client
+    .from("premium_payment_requests")
+    .select(
+      "id, user_id, payment_method, amount_centavos, currency, merchant_transaction_reference, payment_date, payment_time, proof_storage_path, payment_status, review_notes, rejection_reason, customer_full_name, customer_mobile_number, customer_email, reviewed_by, reviewed_by_email, reviewed_at, entitlement_expires_at, created_at, payment_plans(code, name, duration_days)",
+    );
+  if (status === "pending") {
+    paymentQuery = paymentQuery.in("payment_status", [
+      "pending",
+      "under_review",
+    ]);
+  } else if (status === "approved" || status === "rejected") {
+    paymentQuery = paymentQuery.eq("payment_status", status);
+  }
+  if (reference) {
+    paymentQuery = paymentQuery.ilike(
+      "merchant_transaction_reference",
+      `%${reference}%`,
+    );
+  }
+  const { data: payments, error } = await paymentQuery
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error) {
+    console.error("Admin payment query failed:", error.code);
+    return jsonResponse(
+      { error: { code: "payment_records_unavailable" } },
+      503,
+    );
+  }
+
+  const userIds = [
+    ...new Set((payments ?? []).map((payment) => payment.user_id)),
+  ];
   const profileResult = userIds.length === 0
     ? { data: [], error: null }
     : await context.client
@@ -129,7 +175,10 @@ async function listPayments(context: AdminContext): Promise<Response> {
       .in("id", userIds);
   if (profileResult.error) {
     console.error("Payment profile lookup failed:", profileResult.error.code);
-    return jsonResponse({ error: { code: "payment_user_details_unavailable" } }, 503);
+    return jsonResponse(
+      { error: { code: "payment_user_details_unavailable" } },
+      503,
+    );
   }
   const profiles = new Map(
     (profileResult.data ?? []).map((profile) => [profile.id, profile]),
@@ -158,23 +207,32 @@ async function listPayments(context: AdminContext): Promise<Response> {
     };
   }));
   if (rows.some((row) => row === null)) {
-    return jsonResponse({ error: { code: "private_receipt_unavailable" } }, 503);
+    return jsonResponse(
+      { error: { code: "private_receipt_unavailable" } },
+      503,
+    );
   }
 
-  return jsonResponse({ payments: rows });
+  return jsonResponse({
+    payments: rows,
+    hasMore: (payments ?? []).length === limit,
+    nextOffset: offset + (payments ?? []).length,
+  });
 }
 
 async function listPlantRecords(
   context: AdminContext,
   table: "plant_identifications" | "plant_health_assessments",
 ): Promise<Response> {
-  if (!hasRole(context.role, ["super_admin", "admin", "moderator"])) {
+  if (!hasRole(context.role, ["admin", "moderator"])) {
     return jsonResponse({ error: { code: "insufficient_role" } }, 403);
   }
 
   const { data: records, error } = await context.client
     .from(table)
-    .select("id, owner_id, plant_id, image_path, status, provider, result, created_at, completed_at")
+    .select(
+      "id, owner_id, plant_id, image_path, status, provider, result, created_at, completed_at",
+    )
     .order("created_at", { ascending: false })
     .limit(100);
   if (error) {
@@ -182,7 +240,9 @@ async function listPlantRecords(
     return jsonResponse({ error: { code: "plant_records_unavailable" } }, 503);
   }
 
-  const ownerIds = [...new Set((records ?? []).map((record) => record.owner_id))];
+  const ownerIds = [
+    ...new Set((records ?? []).map((record) => record.owner_id)),
+  ];
   const profileResult = ownerIds.length === 0
     ? { data: [], error: null }
     : await context.client
@@ -190,8 +250,14 @@ async function listPlantRecords(
       .select("id, display_name")
       .in("id", ownerIds);
   if (profileResult.error) {
-    console.error("Plant record profile lookup failed:", profileResult.error.code);
-    return jsonResponse({ error: { code: "plant_record_users_unavailable" } }, 503);
+    console.error(
+      "Plant record profile lookup failed:",
+      profileResult.error.code,
+    );
+    return jsonResponse(
+      { error: { code: "plant_record_users_unavailable" } },
+      503,
+    );
   }
   const profiles = new Map(
     (profileResult.data ?? []).map((profile) => [profile.id, profile]),
@@ -219,7 +285,10 @@ async function listPlantRecords(
     };
   }));
   if (rows.some((row) => row === null)) {
-    return jsonResponse({ error: { code: "private_plant_image_unavailable" } }, 503);
+    return jsonResponse(
+      { error: { code: "private_plant_image_unavailable" } },
+      503,
+    );
   }
 
   return jsonResponse({ records: rows });
@@ -252,8 +321,8 @@ async function handleAdminRequest(
         user_id: context.userId,
         role: context.role,
         capabilities: {
-          manage_roles: context.role === "super_admin",
-          manage_payments: context.role === "super_admin",
+          manage_roles: context.role === "admin",
+          manage_payments: context.role === "admin",
           manage_users: context.role !== "moderator",
         },
       });
@@ -265,16 +334,21 @@ async function handleAdminRequest(
       );
       if (error) {
         console.error("Admin dashboard summary failed:", error.code);
-        return jsonResponse({ error: { code: "dashboard_data_unavailable" } }, 503);
+        return jsonResponse(
+          { error: { code: "dashboard_data_unavailable" } },
+          503,
+        );
       }
       return jsonResponse({ summary: data });
     }
 
     case "users.list": {
-      if (!hasRole(context.role, ["super_admin", "admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
-      const search = typeof body.search === "string" ? body.search.trim() : null;
+      const search = typeof body.search === "string"
+        ? body.search.trim()
+        : null;
       const limit = Number.isInteger(body.limit) ? Number(body.limit) : 25;
       const offset = Number.isInteger(body.offset) ? Number(body.offset) : 0;
       const { data, error } = await context.client.rpc("admin_list_users", {
@@ -285,13 +359,16 @@ async function handleAdminRequest(
       });
       if (error) {
         console.error("Admin user query failed:", error.code);
-        return jsonResponse({ error: { code: "user_records_unavailable" } }, 503);
+        return jsonResponse(
+          { error: { code: "user_records_unavailable" } },
+          503,
+        );
       }
       return jsonResponse({ result: data });
     }
 
     case "users.status": {
-      if (!hasRole(context.role, ["super_admin", "admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const userId = body.user_id;
@@ -301,7 +378,10 @@ async function handleAdminRequest(
         (status !== "active" && status !== "suspended") ||
         (status === "suspended" && userId === context.userId)
       ) {
-        return jsonResponse({ error: { code: "invalid_user_status_request" } }, 400);
+        return jsonResponse(
+          { error: { code: "invalid_user_status_request" } },
+          400,
+        );
       }
 
       const { data: targetRole, error: roleError } = await context.client
@@ -311,10 +391,14 @@ async function handleAdminRequest(
         .maybeSingle();
       if (roleError) {
         console.error("Target administrator lookup failed:", roleError.code);
-        return jsonResponse({ error: { code: "administrator_lookup_unavailable" } }, 503);
+        return jsonResponse({
+          error: { code: "administrator_lookup_unavailable" },
+        }, 503);
       }
       if (targetRole) {
-        return jsonResponse({ error: { code: "administrator_management_required" } }, 403);
+        return jsonResponse({
+          error: { code: "administrator_management_required" },
+        }, 403);
       }
 
       const auditAction = status === "suspended"
@@ -337,7 +421,10 @@ async function handleAdminRequest(
         { ban_duration: status === "suspended" ? "876000h" : "none" },
       );
       if (error || !data.user) {
-        console.error("User status update failed:", error?.code ?? "user_missing");
+        console.error(
+          "User status update failed:",
+          error?.code ?? "user_missing",
+        );
         const loggedFailure = await writeAudit(
           context,
           "user.status_change_failed",
@@ -347,18 +434,22 @@ async function handleAdminRequest(
         );
         return jsonResponse({
           error: {
-            code: loggedFailure ? "user_status_update_failed" : "user_status_and_audit_failed",
+            code: loggedFailure
+              ? "user_status_update_failed"
+              : "user_status_and_audit_failed",
           },
         }, 503);
       }
 
-      if (!await writeAudit(
-        context,
-        status === "suspended" ? "user.suspended" : "user.reactivated",
-        "user",
-        userId,
-        { status },
-      )) {
+      if (
+        !await writeAudit(
+          context,
+          status === "suspended" ? "user.suspended" : "user.reactivated",
+          "user",
+          userId,
+          { status },
+        )
+      ) {
         return jsonResponse({
           error: { code: "user_status_changed_audit_unavailable" },
         }, 503);
@@ -372,7 +463,7 @@ async function handleAdminRequest(
     }
 
     case "roles.list": {
-      if (!hasRole(context.role, ["super_admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const { data, error } = await context.client
@@ -382,13 +473,20 @@ async function handleAdminRequest(
         .limit(200);
       if (error) {
         console.error("Admin role listing failed:", error.code);
-        return jsonResponse({ error: { code: "admin_roles_unavailable" } }, 503);
+        return jsonResponse(
+          { error: { code: "admin_roles_unavailable" } },
+          503,
+        );
       }
       const administrators = await Promise.all((data ?? []).map(async (row) => {
-        const { data: userData, error: userError } = await context.client.auth.admin
+        const { data: userData, error: userError } = await context.client.auth
+          .admin
           .getUserById(row.user_id);
         if (userError || !userData.user) {
-          console.error("Admin account lookup failed:", userError?.code ?? "user_missing");
+          console.error(
+            "Admin account lookup failed:",
+            userError?.code ?? "user_missing",
+          );
           return null;
         }
         return {
@@ -398,24 +496,29 @@ async function handleAdminRequest(
         };
       }));
       if (administrators.some((row) => row === null)) {
-        return jsonResponse({ error: { code: "admin_account_details_unavailable" } }, 503);
+        return jsonResponse({
+          error: { code: "admin_account_details_unavailable" },
+        }, 503);
       }
       return jsonResponse({ administrators });
     }
 
     case "roles.set": {
-      if (!hasRole(context.role, ["super_admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const targetUserId = body.user_id;
       if (
         typeof targetUserId !== "string" || !uuidPattern.test(targetUserId) ||
         typeof body.role !== "string" ||
-        !["super_admin", "admin", "moderator"].includes(body.role) ||
+        !["admin", "moderator"].includes(body.role) ||
         typeof body.status !== "string" ||
         !["active", "suspended"].includes(body.status)
       ) {
-        return jsonResponse({ error: { code: "invalid_role_assignment" } }, 400);
+        return jsonResponse(
+          { error: { code: "invalid_role_assignment" } },
+          400,
+        );
       }
       const { data, error } = await context.client.rpc("admin_set_role", {
         p_actor_id: context.userId,
@@ -425,16 +528,19 @@ async function handleAdminRequest(
       });
       if (error) {
         console.error("Admin role assignment failed:", error.code);
-        return jsonResponse({ error: { code: "admin_role_assignment_failed" } }, 409);
+        return jsonResponse(
+          { error: { code: "admin_role_assignment_failed" } },
+          409,
+        );
       }
       return jsonResponse({ administrator: data });
     }
 
     case "payments.list":
-      return await listPayments(context);
+      return await listPayments(context, body);
 
     case "payments.review": {
-      if (!hasRole(context.role, ["super_admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const paymentRequestId = body.payment_request_id;
@@ -465,21 +571,31 @@ async function handleAdminRequest(
         },
       );
       if (reviewError || !review) {
-        console.error("Admin payment review failed:", reviewError?.code ?? "empty_result");
+        console.error(
+          "Admin payment review failed:",
+          reviewError?.code ?? "empty_result",
+        );
         return jsonResponse({ error: { code: "payment_review_failed" } }, 409);
       }
 
-      const { data: notification, error: notificationError } = await context.client
+      const { data: notification, error: notificationError } = await context
+        .client
         .from("payment_email_notifications")
         .select("id")
         .eq("payment_request_id", paymentRequestId)
         .eq("notification_type", "customer_payment_reviewed")
         .maybeSingle();
       if (notificationError) {
-        console.error("Customer payment notice lookup failed:", notificationError.code);
+        console.error(
+          "Customer payment notice lookup failed:",
+          notificationError.code,
+        );
         return jsonResponse({
           review,
-          notification: { status: "unknown", warning: "delivery_status_unavailable" },
+          notification: {
+            status: "unknown",
+            warning: "delivery_status_unavailable",
+          },
         });
       }
       if (!notification) {
@@ -489,7 +605,10 @@ async function handleAdminRequest(
         });
       }
 
-      const delivery = await deliverPaymentNotification(context.client, notification.id);
+      const delivery = await deliverPaymentNotification(
+        context.client,
+        notification.id,
+      );
       const deliveryStatus = delivery.delivered
         ? "sent"
         : delivery.errorCode === "notification_already_processing"
@@ -512,24 +631,25 @@ async function handleAdminRequest(
       let plants;
       if (search) {
         const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
-        const [scientificResult, commonResult, tagalogResult, bisayaResult] = await Promise.all([
-          context.client.from("plant_catalog")
-            .select("id")
-            .ilike("scientific_name", pattern)
-            .limit(safeLimit),
-          context.client.from("plant_catalog")
-            .select("id")
-            .ilike("common_name", pattern)
-            .limit(safeLimit),
-          context.client.from("plant_catalog")
-            .select("id")
-            .ilike("tagalog_name", pattern)
-            .limit(safeLimit),
-          context.client.from("plant_catalog")
-            .select("id")
-            .ilike("bisaya_name", pattern)
-            .limit(safeLimit),
-        ]);
+        const [scientificResult, commonResult, tagalogResult, bisayaResult] =
+          await Promise.all([
+            context.client.from("plant_catalog")
+              .select("id")
+              .ilike("scientific_name", pattern)
+              .limit(safeLimit),
+            context.client.from("plant_catalog")
+              .select("id")
+              .ilike("common_name", pattern)
+              .limit(safeLimit),
+            context.client.from("plant_catalog")
+              .select("id")
+              .ilike("tagalog_name", pattern)
+              .limit(safeLimit),
+            context.client.from("plant_catalog")
+              .select("id")
+              .ilike("bisaya_name", pattern)
+              .limit(safeLimit),
+          ]);
         if (
           scientificResult.error || commonResult.error || tagalogResult.error ||
           bisayaResult.error
@@ -539,14 +659,19 @@ async function handleAdminRequest(
             scientificResult.error?.code ?? commonResult.error?.code ??
               tagalogResult.error?.code ?? bisayaResult.error?.code,
           );
-          return jsonResponse({ error: { code: "plant_catalog_unavailable" } }, 503);
+          return jsonResponse(
+            { error: { code: "plant_catalog_unavailable" } },
+            503,
+          );
         }
-        const ids = [...new Set([
-          ...(scientificResult.data ?? []).map((plant) => plant.id),
-          ...(commonResult.data ?? []).map((plant) => plant.id),
-          ...(tagalogResult.data ?? []).map((plant) => plant.id),
-          ...(bisayaResult.data ?? []).map((plant) => plant.id),
-        ])];
+        const ids = [
+          ...new Set([
+            ...(scientificResult.data ?? []).map((plant) => plant.id),
+            ...(commonResult.data ?? []).map((plant) => plant.id),
+            ...(tagalogResult.data ?? []).map((plant) => plant.id),
+            ...(bisayaResult.data ?? []).map((plant) => plant.id),
+          ]),
+        ];
         if (ids.length === 0) return jsonResponse({ plants: [] });
         const result = await context.client
           .from("plant_catalog")
@@ -557,7 +682,10 @@ async function handleAdminRequest(
         plants = result.data;
         if (result.error) {
           console.error("Plant catalog query failed:", result.error.code);
-          return jsonResponse({ error: { code: "plant_catalog_unavailable" } }, 503);
+          return jsonResponse(
+            { error: { code: "plant_catalog_unavailable" } },
+            503,
+          );
         }
       } else {
         const result = await context.client
@@ -568,7 +696,10 @@ async function handleAdminRequest(
         plants = result.data;
         if (result.error) {
           console.error("Plant catalog query failed:", result.error.code);
-          return jsonResponse({ error: { code: "plant_catalog_unavailable" } }, 503);
+          return jsonResponse(
+            { error: { code: "plant_catalog_unavailable" } },
+            503,
+          );
         }
       }
       const ids = (plants ?? []).map((plant) => plant.id);
@@ -588,9 +719,14 @@ async function handleAdminRequest(
           "Plant catalog details query failed:",
           careResult.error?.code ?? imageResult.error?.code,
         );
-        return jsonResponse({ error: { code: "plant_details_unavailable" } }, 503);
+        return jsonResponse(
+          { error: { code: "plant_details_unavailable" } },
+          503,
+        );
       }
-      const care = new Map((careResult.data ?? []).map((item) => [item.plant_id, item]));
+      const care = new Map(
+        (careResult.data ?? []).map((item) => [item.plant_id, item]),
+      );
       const images = new Map<string, typeof imageResult.data>();
       for (const image of imageResult.data ?? []) {
         const existing = images.get(image.plant_id) ?? [];
@@ -613,55 +749,69 @@ async function handleAdminRequest(
       return await listPlantRecords(context, "plant_health_assessments");
 
     case "garden.list": {
-      if (!hasRole(context.role, ["super_admin", "admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const { data, error } = await context.client
         .from("plants")
-        .select("id, owner_id, common_name, scientific_name, family, category, image_path, created_at")
+        .select(
+          "id, owner_id, common_name, scientific_name, family, category, image_path, created_at",
+        )
         .order("created_at", { ascending: false })
         .limit(100);
       if (error) {
         console.error("Garden records query failed:", error.code);
-        return jsonResponse({ error: { code: "garden_records_unavailable" } }, 503);
+        return jsonResponse(
+          { error: { code: "garden_records_unavailable" } },
+          503,
+        );
       }
       return jsonResponse({ plants: data ?? [] });
     }
 
     case "subscriptions.list": {
-      if (!hasRole(context.role, ["super_admin", "admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const { data, error } = await context.client
         .from("subscription_entitlements")
-        .select("user_id, product_id, status, expires_at, verified_at, updated_at")
+        .select(
+          "user_id, product_id, status, expires_at, verified_at, updated_at",
+        )
         .order("updated_at", { ascending: false })
         .limit(100);
       if (error) {
         console.error("Subscription query failed:", error.code);
-        return jsonResponse({ error: { code: "subscription_records_unavailable" } }, 503);
+        return jsonResponse({
+          error: { code: "subscription_records_unavailable" },
+        }, 503);
       }
       return jsonResponse({ subscriptions: data ?? [] });
     }
 
     case "announcements.list": {
-      if (!hasRole(context.role, ["super_admin", "admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const { data, error } = await context.client
         .from("system_announcements")
-        .select("id, title, body, category, audience, dismissible, published_at, expires_at, is_active, created_at")
+        .select(
+          "id, title, body, category, audience, dismissible, published_at, expires_at, is_active, created_at",
+        )
         .order("published_at", { ascending: false })
         .limit(100);
       if (error) {
         console.error("Announcement query failed:", error.code);
-        return jsonResponse({ error: { code: "announcements_unavailable" } }, 503);
+        return jsonResponse(
+          { error: { code: "announcements_unavailable" } },
+          503,
+        );
       }
       return jsonResponse({ announcements: data ?? [] });
     }
 
     case "announcements.create": {
-      if (!hasRole(context.role, ["super_admin", "admin"])) {
+      if (!hasRole(context.role, ["admin"])) {
         return jsonResponse({ error: { code: "insufficient_role" } }, 403);
       }
       const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -678,7 +828,14 @@ async function handleAdminRequest(
       if (
         title.length < 1 || title.length > 120 ||
         message.length < 1 || message.length > 4000 ||
-        !["update", "maintenance", "feature", "account", "promotion", "plant_care"].includes(String(category)) ||
+        ![
+          "update",
+          "maintenance",
+          "feature",
+          "account",
+          "promotion",
+          "plant_care",
+        ].includes(String(category)) ||
         !["all", "free", "premium"].includes(String(audience)) ||
         !isValidAnnouncementSchedule(publishedAt, expiresAt)
       ) {
@@ -696,19 +853,26 @@ async function handleAdminRequest(
           published_at: publishedAt,
           expires_at: expiresAt,
         })
-        .select("id, title, category, audience, dismissible, published_at, expires_at, is_active")
+        .select(
+          "id, title, category, audience, dismissible, published_at, expires_at, is_active",
+        )
         .single();
       if (error) {
         console.error("Announcement creation failed:", error.code);
-        return jsonResponse({ error: { code: "announcement_create_failed" } }, 503);
+        return jsonResponse(
+          { error: { code: "announcement_create_failed" } },
+          503,
+        );
       }
-      if (!await writeAudit(
-        context,
-        "announcement.created",
-        "announcement",
-        data.id,
-        { category, audience },
-      )) {
+      if (
+        !await writeAudit(
+          context,
+          "announcement.created",
+          "announcement",
+          data.id,
+          { category, audience },
+        )
+      ) {
         return jsonResponse({
           error: { code: "announcement_created_audit_unavailable" },
         }, 503);

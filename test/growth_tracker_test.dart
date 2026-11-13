@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
@@ -8,6 +11,46 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('growth journal displays the photo saved with an observation', (
+    tester,
+  ) async {
+    final store = LocalPlantDataStore();
+    await store.addPlant(
+      'Tomato',
+      details: {'plantingDate': '2026-10-01', 'growthStage': 'Seedling'},
+    );
+    final photoBytes = Uint8List.fromList(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL+nwAAAABJRU5ErkJggg==',
+      ),
+    );
+    await store.saveGrowthEntry(
+      GrowthEntry(
+        id: 'photo-observation',
+        plantName: 'Tomato',
+        activity: 'Observation',
+        date: DateTime(2026, 11, 12),
+        notes: 'First flowers appeared.',
+      ),
+      photoBytes: photoBytes,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GrowthTrackerPage(store: store)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final photo = tester.widget<Image>(
+      find.byWidgetPredicate(
+        (widget) => widget is Image && widget.image is MemoryImage,
+      ),
+    );
+    expect(photo.height, 180);
+    expect(find.text('First flowers appeared.'), findsOneWidget);
   });
 
   test(

@@ -37,6 +37,48 @@ void main() {
     expect(plants.last.imageUrl, isNull);
   });
 
+  test('filters provider search results unrelated to the query', () {
+    final plants = PlantCatalogService.parseResponse({
+      'source': 'GBIF',
+      'results': [
+        {'commonName': 'Mango', 'scientificName': 'Mangifera indica'},
+        {'commonName': 'Plantain', 'scientificName': 'Musa paradisiaca'},
+      ],
+    });
+
+    final filtered = PlantCatalogService.filterRelevantSearchResults(
+      'mango indica',
+      plants,
+    );
+
+    expect(filtered, hasLength(1));
+    expect(filtered.single.scientificName, 'Mangifera indica');
+  });
+
+  test(
+    'matches complete name tokens and ranks exact no-photo matches first',
+    () {
+      final plants = PlantCatalogService.parseResponse({
+        'source': 'GBIF',
+        'results': [
+          {'commonName': 'Primrose', 'scientificName': 'Primula vulgaris'},
+          {'commonName': 'Wild Mango', 'scientificName': 'Mangifera zeylanica'},
+          {'commonName': 'Mango', 'scientificName': 'Mangifera indica'},
+        ],
+      });
+
+      final results = PlantCatalogService.filterRelevantSearchResults(
+        'mango',
+        plants,
+      );
+
+      expect(results, hasLength(2));
+      expect(results.first.commonName, 'Mango');
+      expect(results.first.imageUrl, isNull);
+      expect(results.last.commonName, 'Wild Mango');
+    },
+  );
+
   test('rejects malformed catalog JSON', () {
     expect(
       () => PlantCatalogService.parseResponse({'source': 'gbif'}),

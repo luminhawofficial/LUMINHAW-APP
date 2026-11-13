@@ -51,4 +51,24 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'parses Premium activation notifications and rejects incomplete rows',
+    () {
+      final notification = PremiumActivationNotification.fromJson({
+        'id': 'notification-1',
+        'title': 'Congratulations! You\'re now a LUMINHAW Premium Member! 🎉',
+        'message': 'Your payment has been successfully verified and approved.',
+        'created_at': '2026-11-13T00:00:00Z',
+      });
+
+      expect(notification.title, contains('Premium Member'));
+      expect(notification.message, contains('successfully verified'));
+      expect(notification.createdAt, DateTime.utc(2026, 11, 13));
+      expect(
+        () => PremiumActivationNotification.fromJson({'title': 'Incomplete'}),
+        throwsFormatException,
+      );
+    },
+  );
 }

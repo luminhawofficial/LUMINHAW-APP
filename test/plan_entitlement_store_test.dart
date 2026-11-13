@@ -6,6 +6,7 @@ void main() {
 
   tearDown(() {
     entitlements.tier.value = PlanTier.free;
+    entitlements.expiresAt.value = null;
   });
 
   test('free tier does not receive Premium access in debug builds', () {
@@ -16,6 +17,9 @@ void main() {
 
   test('verified Premium tier receives Premium access', () {
     entitlements.tier.value = PlanTier.premium;
+    entitlements.expiresAt.value = DateTime.now().toUtc().add(
+      const Duration(days: 1),
+    );
 
     expect(entitlements.hasPremiumAccess, isTrue);
   });

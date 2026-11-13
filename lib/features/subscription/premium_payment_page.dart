@@ -59,19 +59,23 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
   final _customerInformationFormKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   final _transactionReference = TextEditingController();
+  final _paymentAmount = TextEditingController();
   final _fullName = TextEditingController();
   final _mobileNumber = TextEditingController();
   final _verifiedMobileNumber = TextEditingController();
   PremiumPaymentOptions? _options;
   Map<String, dynamic>? _openRequest;
-  XFile? _proof;
-  Uint8List? _proofPreviewBytes;
+  Uint8List? _proofBytes;
+  String? _proofFileName;
+  String? _proofContentType;
   String? _submissionError;
   DateTime _paymentDate = DateTime.now();
   Object? _loadError;
   bool _isLoading = true;
   bool _isSubmitting = false;
   bool _isChangingPlan = false;
+  bool _hasPaymentDate = false;
+  bool _hasPaymentTime = false;
   String? _selectedPlanCode;
 
   @override
@@ -86,6 +90,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
   @override
   void dispose() {
     _transactionReference.dispose();
+    _paymentAmount.dispose();
     _fullName.dispose();
     _mobileNumber.dispose();
     _verifiedMobileNumber.dispose();
@@ -184,17 +189,27 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
       );
       if (selected != null) {
         final bytes = await selected.readAsBytes();
+        final extension = selected.name.split('.').last.toLowerCase();
+        final contentType = switch (extension) {
+          'jpg' || 'jpeg' => 'image/jpeg',
+          'png' => 'image/png',
+          _ => null,
+        };
         if (bytes.isEmpty ||
-            bytes.length > PremiumPaymentService.maximumProofBytes) {
+            bytes.length > PremiumPaymentService.maximumProofBytes ||
+            contentType == null) {
           if (mounted) {
-            _showMessage('Choose a non-empty image no larger than 5 MB.');
+            _showMessage(
+              'Choose a non-empty JPG or PNG image no larger than 5 MB.',
+            );
           }
           return;
         }
         if (mounted) {
           setState(() {
-            _proof = selected;
-            _proofPreviewBytes = bytes;
+            _proofBytes = bytes;
+            _proofFileName = selected.name;
+            _proofContentType = contentType;
             _submissionError = null;
           });
         }
@@ -212,7 +227,18 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
       firstDate: today.subtract(const Duration(days: 90)),
       lastDate: today,
     );
-    if (selected != null && mounted) setState(() => _paymentDate = selected);
+    if (selected != null && mounted) {
+      setState(() {
+        _paymentDate = DateTime(
+          selected.year,
+          selected.month,
+          selected.day,
+          _paymentDate.hour,
+          _paymentDate.minute,
+        );
+        _hasPaymentDate = true;
+      });
+    }
   }
 
   Future<void> _choosePaymentTime() async {
@@ -229,6 +255,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
           selected.hour,
           selected.minute,
         );
+        _hasPaymentTime = true;
       });
     }
   }
@@ -236,17 +263,36 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
   Future<void> _submitPayment() async {
     final request = _openRequest;
     final reference = _transactionReference.text.trim();
-    if (request == null ||
-        !RegExp(r'^\d{4} \d{3} \d{6}$').hasMatch(reference)) {
+    if (request == null) return;
+    if (!RegExp(r'^\d{4} \d{3} \d{6}$').hasMatch(reference)) {
       _showMessage(
         'Your reference number must contain exactly 13 digits in the format 0000 000 000000.',
       );
       return;
     }
-    if (_proof == null) {
+    if (!_hasPaymentDate) {
+      _showMessage('Select the transaction date shown in your GCash receipt.');
+      return;
+    }
+    if (_proofBytes == null ||
+        _proofFileName == null ||
+        _proofContentType == null) {
       _showMessage(
         'Upload your GCash receipt or take a picture of your receipt.',
       );
+      return;
+    }
+    final amountText = _paymentAmount.text.trim();
+    final amountMatch = RegExp(r'^(\d{1,8})(?:\.(\d{1,2}))?$')
+        .firstMatch(amountText);
+    final amountCentavos = amountMatch == null
+        ? null
+        : int.parse(amountMatch.group(1)!) * 100 +
+              int.parse((amountMatch.group(2) ?? '').padRight(2, '0'));
+    if (amountCentavos == null ||
+        amountCentavos <= 0 ||
+        amountCentavos != request['amount_centavos']) {
+      _showMessage('Enter the exact payment amount shown for your plan.');
       return;
     }
     setState(() {
@@ -258,7 +304,14 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
         requestId: request['id'] as String,
         transactionReference: reference,
         paymentDate: _paymentDate,
-        proof: _proof!,
+        paymentTime: _hasPaymentTime
+            ? '${_paymentDate.hour.toString().padLeft(2, '0')}:'
+                  '${_paymentDate.minute.toString().padLeft(2, '0')}'
+            : null,
+        amountCentavos: amountCentavos,
+        proofBytes: _proofBytes!,
+        proofFileName: _proofFileName!,
+        contentType: _proofContentType!,
       );
       if (!mounted) return;
       final plan = request['payment_plans'];
@@ -266,11 +319,16 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
       final amount = request['amount_centavos'] as int;
       final currency = request['currency'] as String;
       final paymentDate = _paymentDate;
-      final proofBytes = _proofPreviewBytes!;
+      final paymentTime = _hasPaymentTime ? _timeLabel(_paymentDate) : null;
+      final proofBytes = _proofBytes!;
       _transactionReference.clear();
+      _paymentAmount.clear();
       setState(() {
-        _proof = null;
-        _proofPreviewBytes = null;
+        _proofBytes = null;
+        _proofFileName = null;
+        _proofContentType = null;
+        _hasPaymentDate = false;
+        _hasPaymentTime = false;
         _isSubmitting = false;
         _openRequest = null;
       });
@@ -281,6 +339,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
           amount: _money(amount, currency),
           transactionReference: reference,
           paymentDate: paymentDate,
+          transactionTime: paymentTime,
           receiptImage: proofBytes,
           message: result['message'] is String
               ? result['message'] as String
@@ -331,8 +390,11 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
       _transactionReference.clear();
       setState(() {
         _openRequest = null;
-        _proof = null;
-        _proofPreviewBytes = null;
+        _proofBytes = null;
+        _proofFileName = null;
+        _proofContentType = null;
+        _hasPaymentDate = false;
+        _hasPaymentTime = false;
         _submissionError = null;
         _isChangingPlan = false;
       });
@@ -430,7 +492,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
           if (_openRequest!['payment_status'] == 'pending') _submissionForm(),
           if (_openRequest!['payment_status'] == 'under_review')
             const SetupNotice(
-              message: 'Your payment has been submitted and is waiting for email verification. Premium remains inactive until the GCash transaction is verified.',
+              message: 'Your payment is awaiting administrator verification. Premium remains inactive until the transaction is confirmed in authorized GCash records.',
             ),
         ] else if (!options.enabled || options.plans.isEmpty) ...[
           SetupNotice(message: readinessMessage),
@@ -474,6 +536,12 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
                       '${_money(payment.amountCentavos, payment.currency)} · ${_statusLabel(payment.status)}',
                       style: const TextStyle(color: AppColors.muted),
                     ),
+                    if (payment.transactionReference != null)
+                      Text('GCash reference: ${payment.transactionReference}'),
+                    if (payment.transactionDate != null)
+                      Text(
+                        'Transaction date: ${payment.transactionDate} ${payment.transactionTime ?? ''}',
+                      ),
                     Text(
                       'Created ${_dateLabel(payment.createdAt)}',
                       style: const TextStyle(
@@ -493,6 +561,15 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
                         payment.reviewNotes!.isNotEmpty)
                       Text(
                         'Review note: ${payment.reviewNotes}',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    if (payment.rejectionReason != null &&
+                        payment.rejectionReason!.isNotEmpty)
+                      Text(
+                        'Rejection reason: ${payment.rejectionReason}',
                         style: const TextStyle(
                           color: AppColors.muted,
                           fontSize: 12,
@@ -819,16 +896,44 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
               border: OutlineInputBorder(),
             ),
           ),
+          TextField(
+            controller: _paymentAmount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Payment amount (PHP)',
+              hintText: ((_openRequest?['amount_centavos'] as int? ?? 0) / 100)
+                  .toStringAsFixed(2),
+              border: const OutlineInputBorder(),
+            ),
+          ),
           TextButton.icon(
             onPressed: _isSubmitting ? null : _choosePaymentDate,
             icon: const Icon(Icons.calendar_today),
-            label: Text('Payment date: ${_dateLabel(_paymentDate)}'),
+            label: Text(
+              _hasPaymentDate
+                  ? 'Transaction date: ${_dateLabel(_paymentDate)}'
+                  : 'Select transaction date',
+            ),
           ),
           TextButton.icon(
             onPressed: _isSubmitting ? null : _choosePaymentTime,
             icon: const Icon(Icons.access_time),
-            label: Text('Payment time: ${_timeLabel(_paymentDate)}'),
+            label: Text(
+              _hasPaymentTime
+                  ? 'Transaction time: ${_timeLabel(_paymentDate)}'
+                  : 'Transaction time (optional)',
+            ),
           ),
+          if (_hasPaymentTime)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _isSubmitting
+                    ? null
+                    : () => setState(() => _hasPaymentTime = false),
+                child: const Text('Clear transaction time'),
+              ),
+            ),
           Wrap(
             spacing: 8,
             children: [
@@ -845,33 +950,34 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
                     : () => _pickProof(ImageSource.gallery),
                 icon: const Icon(Icons.image_outlined),
                 label: Text(
-                  _proof == null ? 'Choose receipt' : 'Replace receipt',
+                  _proofBytes == null ? 'Choose receipt' : 'Replace receipt',
                 ),
               ),
             ],
           ),
-          if (_proofPreviewBytes != null)
+          if (_proofBytes != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.memory(
-                  _proofPreviewBytes!,
+                  _proofBytes!,
                   height: 180,
                   width: double.infinity,
                   fit: BoxFit.contain,
                 ),
               ),
             ),
-          if (_proof != null)
+          if (_proofBytes != null)
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: _isSubmitting
                     ? null
                     : () => setState(() {
-                        _proof = null;
-                        _proofPreviewBytes = null;
+                        _proofBytes = null;
+                        _proofFileName = null;
+                        _proofContentType = null;
                       }),
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Remove receipt'),
@@ -902,7 +1008,7 @@ class _PremiumPaymentPageState extends State<PremiumPaymentPage> {
             ),
           ],
           const Text(
-            'Receipt validation does not confirm that money was received. Premium activates only after the actual GCash transaction is verified through the email approval link.',
+            'Uploading a receipt does not prove that money was received. Premium activates only after an administrator verifies the transaction in authorized GCash records.',
             style: TextStyle(color: AppColors.muted, fontSize: 11),
           ),
         ],
@@ -1018,6 +1124,7 @@ class TemporaryPaymentReceiptDialog extends StatelessWidget {
     required this.amount,
     required this.transactionReference,
     required this.paymentDate,
+    required this.transactionTime,
     required this.receiptImage,
     this.message,
     super.key,
@@ -1027,6 +1134,7 @@ class TemporaryPaymentReceiptDialog extends StatelessWidget {
   final String amount;
   final String transactionReference;
   final DateTime paymentDate;
+  final String? transactionTime;
   final Uint8List receiptImage;
   final String? message;
 
@@ -1052,9 +1160,9 @@ class TemporaryPaymentReceiptDialog extends StatelessWidget {
             Text('Amount: $amount'),
             Text('GCash reference: $transactionReference'),
             Text(
-              'Payment date: ${_PremiumPaymentPageState._dateLabel(paymentDate)} '
-              '${_PremiumPaymentPageState._timeLabel(paymentDate)}',
+              'Payment date: ${_PremiumPaymentPageState._dateLabel(paymentDate)}',
             ),
+            if (transactionTime != null) Text('Payment time: $transactionTime'),
             const SizedBox(height: 12),
             const Text(
               'Uploaded receipt',

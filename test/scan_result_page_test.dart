@@ -10,6 +10,39 @@ import 'package:luminhaw/features/scan_results/scan_result_page.dart';
 void main() {
   setUp(() {
     PlanEntitlementStore.instance.tier.value = PlanTier.free;
+    PlanEntitlementStore.instance.expiresAt.value = null;
+  });
+
+  testWidgets('warns when the identification match has low confidence', (
+    tester,
+  ) async {
+    final png = Uint8List.fromList(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL+nwAAAABJRU5ErkJggg==',
+      ),
+    );
+    final result = PlantIdentificationResult(
+      scanId: 'scan-id',
+      name: 'Carica papaya',
+      commonName: 'Papaya',
+      scientificName: 'Carica papaya',
+      family: 'Caricaceae',
+      probability: 0.42,
+      imageBytes: png,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: ScanResultPage(scanResult: result)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Low provider match score'), findsOneWidget);
+    expect(find.textContaining('Try a clearer photo'), findsOneWidget);
+    expect(find.text('Provider match score'), findsOneWidget);
+    expect(
+      find.text('Provider-reported score; not a measured accuracy rate.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('scan result displays field sources and verification statuses', (
@@ -96,6 +129,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('English name'), findsOneWidget);
+    expect(find.textContaining('Low-confidence match'), findsNothing);
     expect(find.text('Papaya'), findsWidgets);
     expect(find.text('Tagalog name'), findsOneWidget);
     expect(find.text('Provider-sourced · GBIF'), findsOneWidget);
@@ -129,6 +163,9 @@ void main() {
     expect(find.text('Plant biology: Papaya'), findsNothing);
 
     PlanEntitlementStore.instance.tier.value = PlanTier.premium;
+    PlanEntitlementStore.instance.expiresAt.value = DateTime.now().toUtc().add(
+      const Duration(days: 1),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Plant biology: Papaya'), findsOneWidget);
     expect(find.text('How plants function'), findsOneWidget);

@@ -22,6 +22,7 @@ void main() {
             amount: 'PHP 49.00',
             transactionReference: '1234 567 890123',
             paymentDate: DateTime(2026, 11, 9, 10, 30),
+            transactionTime: null,
             receiptImage: Uint8List.fromList(
               base64Decode(
                 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/rWQAAAAASUVORK5CYII=',
@@ -37,6 +38,7 @@ void main() {
     expect(find.text('Plan: Premium 30 Days'), findsOneWidget);
     expect(find.text('Amount: PHP 49.00'), findsOneWidget);
     expect(find.text('GCash reference: 1234 567 890123'), findsOneWidget);
+    expect(find.text('Payment time:'), findsNothing);
     expect(find.textContaining('not an official receipt'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

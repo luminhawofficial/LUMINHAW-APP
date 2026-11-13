@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/models/plant_record.dart';
@@ -25,7 +27,27 @@ class _CareGuidePageState extends State<CareGuidePage> {
   @override
   void initState() {
     super.initState();
+    PlanEntitlementStore.instance.tier.addListener(_handleEntitlementChange);
     _loadCareGuide();
+  }
+
+  @override
+  void dispose() {
+    PlanEntitlementStore.instance.tier.removeListener(_handleEntitlementChange);
+    super.dispose();
+  }
+
+  void _handleEntitlementChange() {
+    final isPremium = PlanEntitlementStore.instance.hasPremiumAccess;
+    if (!mounted || isPremium == _isPremium) return;
+    setState(() {
+      _isPremium = isPremium;
+      _entitlementLoaded = true;
+      if (!isPremium) _guide = null;
+    });
+    if (isPremium && !_isLoading) {
+      unawaited(_loadCareGuide());
+    }
   }
 
   @override

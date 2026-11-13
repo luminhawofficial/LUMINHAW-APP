@@ -118,10 +118,39 @@ void main() {
     );
     expect(
       PremiumPaymentService.messageForReadinessIssue(
-        'receipt_validation_manual_review_unsupported',
+        'resend_test_recipient_missing',
       ),
-      contains('manual review'),
+      'Checkout is unavailable because the test email inbox is not configured. Do not send payment.',
     );
+  });
+
+  test('uses the active entitlement returned by payment status', () {
+    final options = PremiumPaymentOptions.fromJson({
+      'userId': 'account-id',
+      'enabled': false,
+      'paymentMethod': null,
+      'plans': [],
+      'payments': [],
+      'entitlement': {
+        'product_id': 'manual_gcash',
+        'status': 'expired',
+        'verified_at': '2026-10-01T00:00:00Z',
+        'expires_at': '2026-11-01T00:00:00Z',
+      },
+      'activeEntitlement': {
+        'product_id': 'manual_gcash',
+        'status': 'active',
+        'verified_at': '2026-11-01T00:00:00Z',
+        'expires_at': DateTime.now()
+            .toUtc()
+            .add(const Duration(days: 30))
+            .toIso8601String(),
+      },
+    });
+
+    expect(options.premiumStatus, 'active');
+    expect(options.premiumExpiresAt, isNotNull);
+    expect(options.premiumExpiresAt!.isAfter(DateTime.now().toUtc()), isTrue);
   });
 
   test('rejects malformed payment service responses', () {
@@ -152,20 +181,12 @@ void main() {
       contains('already been submitted'),
     );
     expect(
-      PremiumPaymentService.messageForErrorCode('reference_mismatch'),
-      contains('does not match'),
-    );
-    expect(
       PremiumPaymentService.messageForErrorCode('wrong_payment_amount'),
       contains('does not match'),
     );
     expect(
-      PremiumPaymentService.messageForErrorCode('receipt_blurry'),
-      'The receipt is blurry or the transaction details cannot be read clearly. Please take a clear, well-lit photo of the receipt, or send it to luminhawofficial@gmail.com for assistance.',
-    );
-    expect(
       PremiumPaymentService.messageForErrorCode('not_a_receipt'),
-      'The uploaded image does not appear to be a GCash receipt. Please upload or take a clear picture of your official GCash receipt.',
+      'Upload a valid JPG or PNG receipt image, up to 5 MB.',
     );
   });
 }
