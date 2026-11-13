@@ -37,6 +37,8 @@ class SupabaseBackend {
 
   static const authWebsiteRedirectUri =
       'https://luminhawofficial.github.io/Administrator/';
+  static const androidPasswordResetCompleteUri =
+      'com.luminhaw.plantcare://auth-callback?password_reset=complete';
   static const androidPasswordResetRedirectUri =
       'com.luminhaw.plantcare://auth/reset-password';
   static String get passwordResetRedirectUri => authWebsiteRedirectUri;
@@ -121,6 +123,20 @@ class SupabaseBackend {
     Uri uri, {
     VoidCallback? onPasswordResetError,
   }) async {
+    if (isPasswordResetReturnCallback(uri)) {
+      try {
+        await SupabaseAuthService.signOut();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'password-reset app sign-out',
+          ),
+        );
+      }
+      return;
+    }
     if (!isSupportedAuthCallback(uri)) return;
     final isPasswordReset = isPasswordResetCallback(uri);
     try {
@@ -150,6 +166,15 @@ class SupabaseBackend {
       (kIsWeb &&
           uri.origin == Uri.base.origin &&
           uri.queryParameters['flow'] == 'password-reset');
+
+  @visibleForTesting
+  static bool isPasswordResetReturnCallback(Uri uri) =>
+      uri.scheme == 'com.luminhaw.plantcare' &&
+      uri.host == 'auth-callback' &&
+      uri.path.isEmpty &&
+      uri.queryParameters.length == 1 &&
+      uri.queryParameters['password_reset'] == 'complete' &&
+      uri.fragment.isEmpty;
 
   @visibleForTesting
   static bool isSupportedAuthCallback(Uri uri) {

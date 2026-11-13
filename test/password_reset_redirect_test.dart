@@ -12,8 +12,35 @@ void main() {
       'com.luminhaw.plantcare://auth/reset-password',
     );
     expect(
+      SupabaseBackend.androidPasswordResetCompleteUri,
+      'com.luminhaw.plantcare://auth-callback?password_reset=complete',
+    );
+    expect(
       SupabaseBackend.passwordResetRedirectUri,
       'https://luminhawofficial.github.io/Administrator/',
+    );
+  });
+
+  test('recognizes the app-only password-reset logout callback', () {
+    expect(
+      SupabaseBackend.isPasswordResetReturnCallback(
+        Uri.parse(SupabaseBackend.androidPasswordResetCompleteUri),
+      ),
+      isTrue,
+    );
+    expect(
+      SupabaseBackend.isPasswordResetReturnCallback(
+        Uri.parse('com.luminhaw.plantcare://auth-callback?code=example'),
+      ),
+      isFalse,
+    );
+    expect(
+      SupabaseBackend.isPasswordResetReturnCallback(
+        Uri.parse(
+          'com.luminhaw.plantcare://auth-callback?password_reset=other',
+        ),
+      ),
+      isFalse,
     );
   });
 
