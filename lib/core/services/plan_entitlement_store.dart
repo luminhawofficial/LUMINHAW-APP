@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:luminhaw/core/services/premium_payment_service.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 
 enum PlanTier { free, premium }
@@ -29,8 +30,8 @@ class PlanEntitlementStore {
 
   Future<void> refreshFromServer() async {
     final generation = ++_refreshGeneration;
-    final user = SupabaseAuthService.currentUser;
-    if (user == null || user.emailConfirmedAt == null) {
+    final initialUser = SupabaseAuthService.currentUser;
+    if (initialUser == null) {
       _clearEntitlement();
       _entitlementUserId = null;
       refreshError.value = null;
@@ -38,7 +39,8 @@ class PlanEntitlementStore {
       return;
     }
 
-    if (_entitlementUserId != user.id) {
+    final userId = initialUser.id;
+    if (_entitlementUserId != userId) {
       tier.value = PlanTier.free;
       _entitlementUserId = null;
     }
@@ -46,48 +48,36 @@ class PlanEntitlementStore {
     refreshError.value = null;
 
     try {
-      final entitlements = await SupabaseBackend.client
-          .from('subscription_entitlements')
-          .select('product_id, status, verified_at, expires_at, updated_at')
-          .eq('user_id', user.id)
-          .order('updated_at', ascending: false)
-          .limit(20);
-      if (_isCurrentRequest(generation, user.id)) {
-        final rows = entitlements
-            .map((row) => Map<String, dynamic>.from(row))
-            .toList(growable: false);
-        final now = DateTime.now().toUtc();
-        final current = rows.cast<Map<String, dynamic>?>().firstWhere(
-          (row) =>
-              row?['status'] == 'active' &&
-              DateTime.tryParse('${row?['expires_at']}')?.isAfter(now) == true,
-          orElse: () => null,
-        );
-        final latest = rows.isEmpty ? null : rows.first;
-        final selected = current ?? latest;
-        final expiration = DateTime.tryParse('${selected?['expires_at']}');
+      final options = await PremiumPaymentService.loadOptions();
+      if (_isCurrentRequest(generation, userId)) {
+        if (options.userId != userId) {
+          throw StateError(
+            'The payment status belongs to a different account.',
+          );
+        }
+        final expiration = options.premiumExpiresAt;
         final active =
-            selected?['status'] == 'active' &&
+            options.premiumStatus == 'active' &&
             expiration != null &&
-            expiration.isAfter(now);
+            expiration.isAfter(DateTime.now().toUtc());
         _applySnapshot(
-          productId: selected?['product_id'] as String?,
-          status: selected?['status'] as String?,
-          startsAt: DateTime.tryParse('${selected?['verified_at']}'),
+          productId: options.premiumProductId,
+          status: options.premiumStatus,
+          startsAt: options.premiumStartsAt,
           expiresAt: expiration,
           active: active,
         );
-        _entitlementUserId = user.id;
+        _entitlementUserId = userId;
       }
     } catch (error) {
-      if (_isCurrentRequest(generation, user.id)) {
+      if (_isCurrentGenerationForUser(generation, userId)) {
         _clearEntitlement();
         _entitlementUserId = null;
         refreshError.value = error;
       }
       rethrow;
     } finally {
-      if (_isCurrentRequest(generation, user.id)) {
+      if (_isCurrentGenerationForUser(generation, userId)) {
         isRefreshing.value = false;
       }
     }
@@ -162,4 +152,8 @@ class PlanEntitlementStore {
       generation == _refreshGeneration &&
       SupabaseAuthService.currentUser?.id == userId &&
       SupabaseAuthService.currentUser?.emailConfirmedAt != null;
+
+  bool _isCurrentGenerationForUser(int generation, String userId) =>
+      generation == _refreshGeneration &&
+      SupabaseAuthService.currentUser?.id == userId;
 }
