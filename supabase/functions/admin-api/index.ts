@@ -6,6 +6,7 @@ import { authenticatedUserId, enforceRateLimit } from "../_shared/auth.ts";
 import { isValidAnnouncementSchedule } from "../_shared/announcements.ts";
 import { deliverPaymentNotification } from "../_shared/payment-email.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
+import { parseAdminPlantCatalogInput } from "./plant-catalog-input.ts";
 
 type AdminRole = "admin" | "moderator";
 
@@ -104,6 +105,68 @@ async function writeAudit(
     return false;
   }
   return true;
+}
+
+async function savePlantCatalogRecord(
+  context: AdminContext,
+  body: Record<string, unknown>,
+  isUpdate: boolean,
+): Promise<Response> {
+  if (!hasRole(context.role, ["admin"])) {
+    return jsonResponse({ error: { code: "insufficient_role" } }, 403);
+  }
+
+  const parsed = parseAdminPlantCatalogInput(body, isUpdate);
+  if (!parsed.ok) {
+    return jsonResponse({ error: { code: parsed.code } }, 400);
+  }
+  const input = parsed.value;
+  const { data: plantId, error } = await context.client.rpc(
+    "admin_save_plant_catalog",
+    {
+      p_actor_id: context.userId,
+      p_plant_id: input.id,
+      p_catalog: input.catalog,
+      p_care: input.care,
+      p_field_references: input.fieldReferences,
+      p_image_url: input.imageUrl,
+      p_image_source_url: input.imageSourceUrl,
+      p_date_updated: input.dateUpdated,
+    },
+  );
+  if (error || typeof plantId !== "string") {
+    console.error(
+      "Admin plant catalog save failed:",
+      error?.code ?? "missing_plant_id",
+    );
+    if (error?.code === "P0002") {
+      return jsonResponse(
+        { error: { code: "plant_catalog_record_not_found" } },
+        404,
+      );
+    }
+    return jsonResponse(
+      { error: { code: "plant_catalog_save_failed" } },
+      503,
+    );
+  }
+
+  if (
+    !await writeAudit(
+      context,
+      isUpdate ? "plant_catalog.updated" : "plant_catalog.created",
+      "plant_catalog",
+      plantId,
+      { fields: Object.keys(input.fieldReferences) },
+    )
+  ) {
+    return jsonResponse(
+      { error: { code: "plant_catalog_audit_unavailable" } },
+      503,
+    );
+  }
+
+  return jsonResponse({ plant_id: plantId }, isUpdate ? 200 : 201);
 }
 
 async function listPayments(
@@ -307,7 +370,7 @@ async function handleAdminRequest(
   const authenticated = await adminContext(request);
   if (authenticated instanceof Response) return authenticated;
 
-  const parsed = await readJsonBody(request, 16384);
+  const parsed = await readJsonBody(request, 131072);
   if ("response" in parsed) return parsed.response;
   const body = parsed.body;
   if (typeof body.action !== "string") {
@@ -630,7 +693,14 @@ async function handleAdminRequest(
       });
     }
 
+    case "plant_catalog.list":
     case "plants.list": {
+      if (
+        body.action === "plant_catalog.list" &&
+        !hasRole(context.role, ["admin"])
+      ) {
+        return jsonResponse({ error: { code: "insufficient_role" } }, 403);
+      }
       const search = typeof body.search === "string" ? body.search.trim() : "";
       const safeLimit = Number.isInteger(body.limit)
         ? Math.max(1, Math.min(Number(body.limit), 100))
@@ -741,13 +811,44 @@ async function handleAdminRequest(
         images.set(image.plant_id, existing);
       }
       return jsonResponse({
-        plants: (plants ?? []).map((plant) => ({
-          ...plant,
-          care: care.get(plant.id) ?? null,
-          images: images.get(plant.id) ?? [],
-        })),
+        plants: (plants ?? []).map((plant) => {
+          const plantCare = care.get(plant.id) ?? null;
+          const plantImages = images.get(plant.id) ?? [];
+          const primaryImage = plantImages.find((image) => image.is_primary) ??
+            null;
+          return {
+            ...plant,
+            image_url: primaryImage?.image_url ?? "",
+            date_updated: plant.date_updated ??
+              plant.updated_at?.slice(0, 10) ??
+              "",
+            field_references: plant.field_references ?? {},
+            water_requirement: plantCare?.water_requirements ??
+              plantCare?.watering ??
+              "",
+            sunlight_requirement: plantCare?.sunlight_requirements ??
+              plantCare?.sunlight ??
+              "",
+            soil_requirement: plantCare?.soil_requirements ??
+              plantCare?.soil ??
+              "",
+            fertilizer: plantCare?.fertilizer ?? "",
+            growth_tips: plantCare?.growth_tips ?? "",
+            common_diseases: plantCare?.common_diseases ?? "",
+            treatment: plantCare?.treatment ?? "",
+            toxicity: plantCare?.toxicity ?? "unknown",
+            care: plantCare,
+            images: plantImages,
+          };
+        }),
       });
     }
+
+    case "plant_catalog.create":
+      return await savePlantCatalogRecord(context, body, false);
+
+    case "plant_catalog.update":
+      return await savePlantCatalogRecord(context, body, true);
 
     case "scans.list":
       return await listPlantRecords(context, "plant_identifications");
