@@ -83,6 +83,19 @@ Future<void> main() async {
             authState.event == AuthChangeEvent.signedOut) {
           SupabaseAuthService.clearPasswordRecoverySession();
         }
+        if (authState.event == AuthChangeEvent.signedIn) {
+          try {
+            await SupabaseAuthService.ensureCurrentUserProfile();
+          } catch (error, stackTrace) {
+            FlutterError.reportError(
+              FlutterErrorDetails(
+                exception: error,
+                stack: stackTrace,
+                library: 'Supabase account profile',
+              ),
+            );
+          }
+        }
         handleAuthNavigation(
           authState.event,
           emailVerified: authState.session?.user.emailConfirmedAt != null,
@@ -126,6 +139,15 @@ Future<void> main() async {
         appNavigatorKey.currentState?.pushNamedAndRemoveUntil(
           '/update-password',
           (_) => false,
+        );
+      },
+      onAuthLinkError: () {
+        final context = appNavigatorKey.currentContext;
+        if (context == null) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google sign-in did not complete. Please try again.'),
+          ),
         );
       },
     );

@@ -362,9 +362,10 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _PlantPreview extends StatelessWidget {
-  const _PlantPreview({required this.name});
+  const _PlantPreview({required this.name, required this.width});
 
   final String name;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -372,37 +373,52 @@ class _PlantPreview extends StatelessWidget {
       valueListenable: LocalPlantDataStore.instance.gardenPlantDetails,
       builder: (context, details, _) {
         final plant = PlantRecord.fromStoredDetails(name, details[name]);
+        final plantingDate = plant.plantingDate;
+        final parsedDate = plantingDate == null
+            ? null
+            : DateTime.tryParse(plantingDate);
+        final formattedDate = parsedDate == null
+            ? plantingDate
+            : MaterialLocalizations.of(context).formatMediumDate(parsedDate);
+        final dateLabel = plantingDate == null
+            ? null
+            : 'Planted $formattedDate';
+        final photoSize = width - 12;
+
         return SizedBox(
-          width: 132,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: AppCard(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: 78,
-                    width: 116,
-                    child: PlantCoverPhoto(
-                      plant: plant,
-                      width: 116,
-                      height: 78,
-                    ),
+          width: width,
+          child: AppCard(
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                PlantCoverPhoto(
+                  plant: plant,
+                  width: photoSize,
+                  height: photoSize,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(height: 5),
+                ),
+                if (dateLabel != null) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    name,
-                    maxLines: 1,
+                    dateLabel,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.green,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: const TextStyle(color: AppColors.muted, fontSize: 9),
                   ),
                 ],
-              ),
+              ],
             ),
           ),
         );
@@ -563,14 +579,28 @@ class _HomeGardenPreviewState extends State<_HomeGardenPreview> {
                   );
                 }
 
-                return SizedBox(
-                  height: 145,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      for (final name in names) _PlantPreview(name: name),
-                    ],
-                  ),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    const spacing = 8.0;
+                    final cardWidth = (constraints.maxWidth - spacing * 2) / 3;
+                    final cards = <Widget>[];
+                    for (var index = 0; index < names.length; index++) {
+                      if (index > 0) cards.add(const SizedBox(width: spacing));
+                      cards.add(
+                        _PlantPreview(name: names[index], width: cardWidth),
+                      );
+                    }
+
+                    return SizedBox(
+                      height: cardWidth + 48,
+                      child: names.length > 3
+                          ? ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: cards,
+                            )
+                          : Row(children: cards),
+                    );
+                  },
                 );
               },
             );

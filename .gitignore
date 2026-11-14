@@ -46,6 +46,7 @@ migrate_working_dir/
 /supabase/.env*
 !/supabase/.env.example
 /.secrets*
+/upload-keystore.jks
 
 # Symbolication related
 app.*.symbols

@@ -169,4 +169,48 @@ void main() {
     expect(store.completedCareTasks.value.single.notes, 'Soil felt dry.');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Growth Tracker saves a note-only Update activity', (
+    tester,
+  ) async {
+    final store = LocalPlantDataStore();
+    await store.addPlant(
+      'Tomato',
+      details: {
+        'plantingDate': DateTime.now()
+            .subtract(const Duration(days: 2))
+            .toIso8601String()
+            .split('T')
+            .first,
+        'growthStage': 'Seedling',
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GrowthTrackerPage(store: store)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Care activities'));
+    await tester.tap(find.text('Watered'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Update').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('growth-activity-notes')),
+      'New leaves appeared this morning.',
+    );
+    await tester.ensureVisible(find.text('Save care activity'));
+    await tester.tap(find.text('Save care activity'));
+    await tester.pumpAndSettle();
+
+    expect(store.growthEntries.value.single.activity, 'Update');
+    expect(
+      store.growthEntries.value.single.notes,
+      'New leaves appeared this morning.',
+    );
+    expect(find.text('New leaves appeared this morning.'), findsOneWidget);
+  });
 }

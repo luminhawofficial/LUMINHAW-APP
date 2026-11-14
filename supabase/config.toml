@@ -22,6 +22,8 @@ site_url = "https://luminhawofficial.github.io/Administrator/"
 additional_redirect_urls = [
   "https://luminhawofficial.github.io/Administrator/",
   "https://luminhawofficial.github.io/Administrator/**",
+  "https://luminhawofficial.github.io/LUMINHAW-APP/",
+  "https://luminhawofficial.github.io/LUMINHAW-APP/**",
   "luminhaw://*",
   "luminhaw://auth/callback",
   "com.luminhaw.plantcare://auth-callback",

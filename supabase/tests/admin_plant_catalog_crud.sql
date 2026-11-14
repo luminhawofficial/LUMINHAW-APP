@@ -1,6 +1,6 @@
 begin;
 
-select plan(6);
+select plan(7);
 
 select ok(
   has_column('public', 'plant_catalog', 'field_references')
@@ -49,6 +49,38 @@ select ok(
     'EXECUTE'
   ),
   'anonymous clients cannot invoke catalog save'
+);
+
+insert into public.plant_catalog (
+  scientific_name,
+  common_name,
+  tagalog_name,
+  bisaya_name,
+  is_verified,
+  is_active,
+  verification_status
+)
+values (
+  'Luminhaw Admin Fixture species',
+  'Luminhaw Admin Fixture',
+  'Halaman Pagsubok',
+  'Tanom Pagsulay',
+  true,
+  true,
+  'verified'
+);
+
+select ok(
+  (
+    select count(*) = 4
+    from public.plant_catalog_aliases
+    where plant_id = (
+      select id
+      from public.plant_catalog
+      where scientific_name = 'Luminhaw Admin Fixture species'
+    )
+  ),
+  'verified admin catalog plants are indexed for user library search'
 );
 
 select * from finish();

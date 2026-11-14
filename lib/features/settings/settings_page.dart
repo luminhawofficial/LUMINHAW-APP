@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
+import 'package:luminhaw/core/services/app_version_service.dart';
 import 'package:luminhaw/core/services/local_plant_data_store.dart';
 import 'package:luminhaw/core/services/plan_entitlement_store.dart';
 import 'package:luminhaw/core/services/plant_care_recommendations.dart';
@@ -600,6 +601,8 @@ class _AnnouncementCard extends StatelessWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool _careReminders = false;
   bool _isSaving = false;
+  late final Future<String?> _appVersion =
+      AppVersionService.readInstalledVersion();
 
   @override
   void initState() {
@@ -673,14 +676,51 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
               const Divider(height: 1),
+              const ListTile(
+                leading: Icon(Icons.language, color: AppColors.green),
+                title: Text('Language'),
+                subtitle: Text('English · only supported language'),
+              ),
+              const Divider(height: 1),
               _SettingsAction(
                 title: 'Change password',
+                onTap: () => Navigator.pushNamed(context, '/change-password'),
+              ),
+              _SettingsAction(
+                title: 'Forgot password',
                 onTap: () => Navigator.pushNamed(context, '/forgot'),
+              ),
+              _SettingsAction(
+                title: 'Help and support',
+                onTap: () => Navigator.pushNamed(context, '/help'),
+              ),
+              _SettingsAction(
+                title: 'About LUMINHAW',
+                onTap: () => Navigator.pushNamed(context, '/about'),
               ),
               _SettingsAction(
                 title: 'Privacy and terms',
                 onTap: () => Navigator.pushNamed(context, '/privacy'),
               ),
+              FutureBuilder<String?>(
+                future: _appVersion,
+                builder: (context, snapshot) {
+                  final version = snapshot.hasError
+                      ? 'Could not load: ${snapshot.error}'
+                      : snapshot.connectionState != ConnectionState.done
+                      ? 'Loading…'
+                      : snapshot.data ?? 'Unavailable';
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.info_outline,
+                      color: AppColors.green,
+                    ),
+                    title: const Text('Application version'),
+                    subtitle: Text(version),
+                  );
+                },
+              ),
+              const Divider(height: 1),
               _SettingsAction(
                 title: 'Replay introduction',
                 onTap: () async {

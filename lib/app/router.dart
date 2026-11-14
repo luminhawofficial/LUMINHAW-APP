@@ -22,6 +22,7 @@ import 'package:luminhaw/features/settings/settings_page.dart';
 import 'package:luminhaw/features/settings/saved_plant_details_page.dart';
 import 'package:luminhaw/features/subscription/subscription_pages.dart';
 import 'package:luminhaw/features/subscription/premium_payment_page.dart';
+import 'package:luminhaw/features/admin/admin_plant_catalog_page.dart';
 import 'package:luminhaw/features/admin/admin_payment_review_page.dart';
 
 class LuminhawRouter {
@@ -39,6 +40,7 @@ class LuminhawRouter {
     '/verification': (context) =>
         VerificationPage(email: _emailArgument(context)),
     '/forgot': (_) => const ForgotPasswordPage(),
+    '/change-password': (_) => const ChangePasswordPage(),
     '/update-password': (_) => const UpdatePasswordPage(),
     '/scan': _assistantOverlay((_) => const ScannerPage()),
     '/result': _assistantOverlay(
@@ -73,12 +75,14 @@ class LuminhawRouter {
     '/premium': _assistantOverlay((_) => const PremiumPage()),
     '/payment': _assistantOverlay((_) => const PremiumPaymentPage()),
     '/admin/payments': (_) => const AdminPaymentReviewPage(),
+    '/admin/plants': (_) => const AdminPlantCatalogPage(),
     '/ai-history': _assistantOverlay((_) => const AiSearchHistoryPage()),
     '/assistant': (context) =>
         AssistantPage(conversationId: _conversationArgument(context)),
     '/assistant/new': (_) => const AssistantPage(startNewChat: true),
     '/library': (_) => const AppShell(initialTab: 1),
     '/profile': (_) => const AppShell(initialTab: 4),
+    '/help': _assistantOverlay((_) => const HelpSupportPage()),
     '/about': _assistantOverlay((_) => const AboutPage()),
     '/privacy': _assistantOverlay((_) => const PrivacyPage()),
   };

@@ -5,6 +5,11 @@ class AppVersionService {
 
   static const _installedVersionKey = 'installed_app_version';
 
+  static Future<String?> readInstalledVersion() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getString(_installedVersionKey);
+  }
+
   static Future<void> recordInstalledVersion(String currentVersion) async {
     final normalizedVersion = currentVersion.trim();
     if (normalizedVersion.isEmpty) {

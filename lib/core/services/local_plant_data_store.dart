@@ -185,8 +185,8 @@ class LocalPlantDataStore {
       if (scope == 'device') {
         await _loadFromPreferences();
       } else {
-        _requireVerifiedUser();
-        await _loadFromCloud(scope);
+        final user = _requireVerifiedUser();
+        await _loadFromCloud(user);
       }
     } catch (error) {
       loadError.value = error;
@@ -237,11 +237,12 @@ class LocalPlantDataStore {
     growthEntries.value = List.unmodifiable(entries);
   }
 
-  Future<void> _loadFromCloud(String scope) async {
+  Future<void> _loadFromCloud(User user) async {
     final client = SupabaseBackend.client;
     final plants = await client
         .from('plants')
         .select('id, common_name, catalog_details')
+        .eq('owner_id', user.id)
         .order('created_at');
     final namesById = <String, String>{};
     final detailsByName = <String, Map<String, Object?>>{};
@@ -260,6 +261,7 @@ class LocalPlantDataStore {
         .select(
           'id, plant_id, observed_on, height_cm, leaf_count, notes, image_path',
         )
+        .eq('owner_id', user.id)
         .order('observed_on', ascending: false);
     for (final row in growthRows) {
       final plantName = namesById[row['plant_id'] as String];
@@ -281,6 +283,7 @@ class LocalPlantDataStore {
     final careRows = await client
         .from('care_activities')
         .select('id, plant_id, activity, notes, occurred_at')
+        .eq('owner_id', user.id)
         .order('occurred_at', ascending: false);
     for (final row in careRows) {
       final plantName = namesById[row['plant_id'] as String];
@@ -296,7 +299,7 @@ class LocalPlantDataStore {
       );
     }
 
-    await _loadCareTasks(scope);
+    await _loadCareTasks('account:${user.id}');
     entries.sort((a, b) => b.date.compareTo(a.date));
     gardenPlantNames.value = List.unmodifiable(
       plants.map((row) => row['common_name'] as String),
@@ -756,27 +759,21 @@ class LocalPlantDataStore {
     return null;
   }
 
-  Future<void> clearPersonalData() async {
+  Future<void> clearPersonalData({required String ownerId}) async {
     final preferences = await SharedPreferences.getInstance();
-    final gardenRemoved = await preferences.remove(_gardenKey);
-    final gardenDetailsRemoved = await preferences.remove(_gardenDetailsKey);
-    final entriesRemoved = await preferences.remove(_entriesKey);
-    final careKey = _careTasksStorageKey(_activeScope ?? 'device');
+    final careKey = _careTasksStorageKey('account:$ownerId');
     final careTasksRemoved =
         !preferences.containsKey(careKey) || await preferences.remove(careKey);
-    if (!gardenRemoved ||
-        !gardenDetailsRemoved ||
-        !entriesRemoved ||
-        !careTasksRemoved) {
+    if (!careTasksRemoved) {
       throw StateError(
-        'Local garden data could not be removed from this device.',
+        'This account’s local care-task data could not be removed.',
       );
     }
 
-    gardenPlantNames.value = const [];
-    gardenPlantDetails.value = const {};
-    growthEntries.value = const [];
-    completedCareTasks.value = const [];
-    retryLoad();
+    if (_activeScope == 'account:$ownerId') {
+      completedCareTasks.value = const [];
+      _loadFuture = null;
+      await load();
+    }
   }
 }

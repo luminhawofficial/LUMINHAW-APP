@@ -1,3 +1,4 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { authenticatedUserId, enforceRateLimit } from "../_shared/auth.ts";
 import { corsHeaders, jsonResponse, readJsonBody } from "../_shared/http.ts";
 import {
@@ -21,8 +22,12 @@ type CatalogPlant = {
   taxonomicStatus?: string;
   order?: string;
   description?: string;
+  englishName?: string;
+  category?: string;
   tagalogName?: string;
   bisayaName?: string;
+  alternativeNames?: string[];
+  matchedName?: string;
   formerScientificName?: string;
   acceptedTaxonId?: string;
   imageUrl: string | null;
@@ -30,7 +35,12 @@ type CatalogPlant = {
   imageLicense?: string;
   imageLicenseUrl?: string;
   imageReferenceUrl?: string;
-  source: "perenual" | "trefle" | "gbif";
+  source: "luminhaw" | "perenual" | "trefle" | "gbif";
+};
+
+type LocalCatalogSearch = {
+  plants: CatalogPlant[];
+  hasMore: boolean;
 };
 
 type CatalogImage = {
@@ -82,6 +92,108 @@ function httpsUrl(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+function object(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string =>
+      typeof item === "string" && item.trim().length > 0
+    ).map((item) => item.trim())
+    : [];
+}
+
+async function searchLocalCatalog(
+  query: string,
+  limit: number,
+  offset: number,
+): Promise<LocalCatalogSearch> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error("Plant catalog database configuration is missing.");
+    return { plants: [], hasMore: false };
+  }
+
+  const client = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await client.rpc("search_plant_catalog", {
+    p_query: query,
+    p_limit: limit,
+    p_offset: offset,
+  });
+  if (error) {
+    console.error("Local plant alias search failed:", error.code);
+    return { plants: [], hasMore: false };
+  }
+  if (!Array.isArray(data)) return { plants: [], hasMore: false };
+
+  const rows = data.flatMap((item: unknown) => {
+    const row = object(item);
+    const plant = object(row?.plant);
+    const scientificName = firstString(plant?.scientific_name);
+    if (!row || !plant || !scientificName) return [];
+    const images = Array.isArray(plant.plant_images)
+      ? plant.plant_images.map(object).filter(
+        (image): image is Record<string, unknown> =>
+          image !== null && image.is_verified === true,
+      )
+      : [];
+    const image = images[0];
+    return [{
+      plant: {
+        ...plant,
+        commonName: firstString(plant.common_name) ?? scientificName,
+        scientificName,
+        family: firstString(plant.family) ?? "Not listed",
+        englishName: firstString(plant.english_name) ?? undefined,
+        category: firstString(plant.category) ?? "Plants",
+        tagalogName: firstString(plant.tagalog_name) ?? undefined,
+        bisayaName: firstString(plant.bisaya_name) ?? undefined,
+        alternativeNames: stringList(row.alternative_names),
+        matchedName: firstString(row.matched_name) ?? undefined,
+        acceptedTaxonId: firstString(plant.gbif_key) ??
+          (typeof plant.gbif_key === "number"
+            ? String(plant.gbif_key)
+            : undefined),
+        imageUrl: httpsUrl(image?.image_url),
+        imageAttribution: firstString(image?.creator) ?? undefined,
+        imageLicense: firstString(image?.license) ?? undefined,
+        imageLicenseUrl: httpsUrl(image?.license_url) ?? undefined,
+        imageReferenceUrl: httpsUrl(image?.source_url) ?? undefined,
+        source: "luminhaw" as const,
+      } satisfies CatalogPlant,
+      hasMore: row.has_more === true,
+    }];
+  });
+  return {
+    plants: rows.map((row) => row.plant),
+    hasMore: rows.some((row) => row.hasMore),
+  };
+}
+
+function mergeCatalogPlants(
+  localPlants: CatalogPlant[],
+  providerPlants: CatalogPlant[],
+  limit: number,
+): CatalogPlant[] {
+  const seen = new Set<string>();
+  const merged: CatalogPlant[] = [];
+  for (const plant of [...localPlants, ...providerPlants]) {
+    const key = plant.acceptedTaxonId ??
+      plant.scientificName.trim().replace(/\s+/g, " ").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(plant);
+    if (merged.length >= limit) break;
+  }
+  return merged;
 }
 
 async function loadImageForTaxon(
@@ -290,23 +402,43 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   const term = query.trim();
+  const limitValue = parsed.body.limit;
+  const offsetValue = parsed.body.offset;
+  const limit = typeof limitValue === "number" &&
+      Number.isInteger(limitValue) &&
+      limitValue >= 1 &&
+      limitValue <= 50
+    ? limitValue
+    : 20;
+  const offset = typeof offsetValue === "number" &&
+      Number.isInteger(offsetValue) &&
+      offsetValue >= 0 &&
+      offsetValue <= 500
+    ? offsetValue
+    : 0;
+  const localCatalog = await searchLocalCatalog(term, limit, offset);
+  const localPlants = localCatalog.plants;
+  await enrichCatalogPlants(localPlants);
+  let providerPlants: CatalogPlant[] = [];
+
   const perenualKey = Deno.env.get("PERENUAL_API_KEY");
   if (perenualKey) {
     try {
       const url = new URL("https://perenual.com/api/species-list");
       url.searchParams.set("key", perenualKey);
       url.searchParams.set("q", term);
+      url.searchParams.set("page", String(Math.floor(offset / limit) + 1));
       const response = await fetch(url, {
         signal: AbortSignal.timeout(12_000),
       });
       if (response.ok) {
         const payload = await response.json();
-        const plants = (payload.data ?? [])
+        const plants = (Array.isArray(payload.data) ? payload.data : [])
           .filter((item: Record<string, unknown>) =>
             Array.isArray(item.scientific_name) &&
             typeof item.scientific_name[0] === "string"
           )
-          .slice(0, 20)
+          .slice(0, limit)
           .map((item: Record<string, unknown>) => {
             const scientificName = Array.isArray(item.scientific_name)
               ? item.scientific_name.find(
@@ -345,14 +477,7 @@ async function handleRequest(request: Request): Promise<Response> {
             (plant: CatalogPlant | null): plant is CatalogPlant =>
               plant !== null,
           );
-        if (plants.length > 0) {
-          await enrichCatalogPlants(plants);
-          return jsonResponse({
-            success: true,
-            source: "Perenual",
-            results: plants,
-          });
-        }
+        providerPlants = plants;
       } else {
         console.error("Perenual returned", response.status);
       }
@@ -365,10 +490,17 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   const trefleKey = Deno.env.get("TREFLE_API_KEY");
-  if (trefleKey) {
+  if (providerPlants.length === 0 && trefleKey) {
     try {
-      const treflePlants = await searchTreflePlants(term, trefleKey);
-      const plants: CatalogPlant[] = treflePlants.slice(0, 20).map((plant) => ({
+      const treflePlants = await searchTreflePlants(
+        term,
+        trefleKey,
+        fetch,
+        Math.floor(offset / limit) + 1,
+      );
+      const plants: CatalogPlant[] = treflePlants.slice(0, limit).map((
+        plant,
+      ) => ({
         commonName: plant.commonName ?? plant.scientificName,
         scientificName: plant.scientificName,
         family: plant.family ?? "Not listed",
@@ -378,14 +510,7 @@ async function handleRequest(request: Request): Promise<Response> {
         imageUrl: null,
         source: "trefle",
       }));
-      if (plants.length > 0) {
-        await enrichCatalogPlants(plants);
-        return jsonResponse({
-          success: true,
-          source: "Trefle",
-          results: plants,
-        });
-      }
+      providerPlants = plants;
     } catch (error) {
       console.error(
         "Trefle search failed:",
@@ -394,93 +519,100 @@ async function handleRequest(request: Request): Promise<Response> {
     }
   }
 
-  try {
-    const url = new URL("https://api.gbif.org/v1/species/search");
-    url.searchParams.set("q", term);
-    url.searchParams.set("rank", "SPECIES");
-    url.searchParams.set("status", "ACCEPTED");
-    url.searchParams.set("limit", "20");
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!response.ok) {
-      console.error("GBIF returned", response.status);
-      return jsonResponse(
-        { error: { code: "plant_catalog_provider_error" } },
-        502,
-      );
-    }
-
-    const payload = await response.json();
-    const plants: CatalogPlant[] = (payload.results ?? [])
-      .filter((item: Record<string, unknown>) =>
-        typeof item.scientificName === "string" &&
-        typeof item.key === "number" &&
-        (typeof item.rank !== "string" ||
-          item.rank.toUpperCase() === "SPECIES") &&
-        (typeof item.taxonomicStatus !== "string" ||
-          item.taxonomicStatus.toUpperCase() === "ACCEPTED")
-      )
-      .slice(0, 20)
-      .map((item: Record<string, unknown>) => {
-        const descriptions = item.descriptions;
-        const description = typeof descriptions === "string"
-          ? descriptions
-          : Array.isArray(descriptions)
-          ? firstString(
-            descriptions.map((entry: unknown) =>
-              entry !== null && typeof entry === "object"
-                ? (entry as Record<string, unknown>).description ??
-                  (entry as Record<string, unknown>).text
-                : null
-            ),
-          )
-          : null;
-        const key = item.nubKey ?? item.acceptedKey ?? item.speciesKey ??
-          item.key;
-        return {
-          commonName: firstString(item.vernacularName) ??
-            firstString(item.canonicalName) ??
-            String(item.scientificName),
-          scientificName: firstString(item.acceptedScientificName) ??
-            firstString(item.acceptedName) ??
-            String(item.scientificName),
-          family: firstString(item.family) ?? "Not listed",
-          kingdom: firstString(item.kingdom) ?? undefined,
-          phylum: firstString(item.phylum) ?? undefined,
-          taxonomicClass: firstString(item.class) ?? undefined,
-          genus: firstString(item.genus) ?? undefined,
-          species: firstString(item.species) ?? undefined,
-          rank: firstString(item.rank) ?? undefined,
-          taxonomicStatus: firstString(item.taxonomicStatus) ?? undefined,
-          order: firstString(item.order) ?? undefined,
-          description: description ?? undefined,
-          formerScientificName: firstString(item.formerScientificName) ??
-            firstString(item.synonym) ??
-            undefined,
-          acceptedTaxonId: key == null ? undefined : String(key),
-          imageUrl: null,
-          source: "gbif" as const,
-        };
+  let providerError: string | null = null;
+  if (providerPlants.length === 0) {
+    try {
+      const url = new URL("https://api.gbif.org/v1/species/search");
+      url.searchParams.set("q", term);
+      url.searchParams.set("rank", "SPECIES");
+      url.searchParams.set("status", "ACCEPTED");
+      url.searchParams.set("limit", String(limit));
+      url.searchParams.set("offset", String(offset));
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(12_000),
       });
-
-    await enrichCatalogPlants(plants);
-
-    return jsonResponse({
-      success: true,
-      source: "GBIF",
-      results: plants,
-    });
-  } catch (error) {
-    console.error(
-      "GBIF search failed:",
-      error instanceof Error ? error.name : "unknown error",
-    );
-    return jsonResponse(
-      { error: { code: "plant_catalog_unavailable" } },
-      502,
-    );
+      if (!response.ok) {
+        console.error("GBIF returned", response.status);
+        providerError = "plant_catalog_provider_error";
+      } else {
+        const payload = await response.json();
+        providerPlants = (payload.results ?? [])
+          .filter((item: Record<string, unknown>) =>
+            typeof item.scientificName === "string" &&
+            typeof item.key === "number" &&
+            (typeof item.rank !== "string" ||
+              item.rank.toUpperCase() === "SPECIES") &&
+            (typeof item.taxonomicStatus !== "string" ||
+              item.taxonomicStatus.toUpperCase() === "ACCEPTED")
+          )
+          .slice(0, limit)
+          .map((item: Record<string, unknown>) => {
+            const descriptions = item.descriptions;
+            const description = typeof descriptions === "string"
+              ? descriptions
+              : Array.isArray(descriptions)
+              ? firstString(
+                descriptions.map((entry: unknown) =>
+                  entry !== null && typeof entry === "object"
+                    ? (entry as Record<string, unknown>).description ??
+                      (entry as Record<string, unknown>).text
+                    : null
+                ),
+              )
+              : null;
+            const key = item.nubKey ?? item.acceptedKey ?? item.speciesKey ??
+              item.key;
+            return {
+              commonName: firstString(item.vernacularName) ??
+                firstString(item.canonicalName) ??
+                String(item.scientificName),
+              scientificName: firstString(item.acceptedScientificName) ??
+                firstString(item.acceptedName) ??
+                String(item.scientificName),
+              family: firstString(item.family) ?? "Not listed",
+              kingdom: firstString(item.kingdom) ?? undefined,
+              phylum: firstString(item.phylum) ?? undefined,
+              taxonomicClass: firstString(item.class) ?? undefined,
+              genus: firstString(item.genus) ?? undefined,
+              species: firstString(item.species) ?? undefined,
+              rank: firstString(item.rank) ?? undefined,
+              taxonomicStatus: firstString(item.taxonomicStatus) ?? undefined,
+              order: firstString(item.order) ?? undefined,
+              description: description ?? undefined,
+              formerScientificName: firstString(item.formerScientificName) ??
+                firstString(item.synonym) ??
+                undefined,
+              acceptedTaxonId: key == null ? undefined : String(key),
+              imageUrl: null,
+              source: "gbif" as const,
+            };
+          });
+      }
+    } catch (error) {
+      console.error(
+        "GBIF search failed:",
+        error instanceof Error ? error.name : "unknown error",
+      );
+      providerError = "plant_catalog_unavailable";
+    }
   }
+
+  if (
+    localPlants.length === 0 && providerPlants.length === 0 && providerError
+  ) {
+    return jsonResponse({ error: { code: providerError } }, 502);
+  }
+
+  await enrichCatalogPlants(providerPlants);
+  const results = mergeCatalogPlants(localPlants, providerPlants, limit);
+  const hasMore = localCatalog.hasMore || providerPlants.length >= limit;
+  const sources = [...new Set(results.map((plant) => plant.source))];
+  return jsonResponse({
+    success: true,
+    source: sources.join(" + ") || "LUMINHAW plant catalog",
+    results,
+    hasMore,
+  });
 }
 
 Deno.serve(async (request: Request): Promise<Response> => {

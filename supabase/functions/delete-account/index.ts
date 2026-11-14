@@ -4,7 +4,7 @@ import { corsHeaders, jsonResponse } from "../_shared/http.ts";
 
 type AdminClient = ReturnType<typeof createClient<any>>;
 
-const bucketNames = ["plant-photos", "premium-payment-proofs"];
+const bucketNames = ["plant-photos", "premium-payment-proofs", "avatars"];
 const pageSize = 100;
 const recentAuthenticationWindowSeconds = 5 * 60;
 

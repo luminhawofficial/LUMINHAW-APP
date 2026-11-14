@@ -589,6 +589,10 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
                           value: 'Repotted',
                           child: Text('Repotted'),
                         ),
+                        DropdownMenuItem(
+                          value: 'Update',
+                          child: Text('Update'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -599,11 +603,17 @@ class _GrowthTrackerPageState extends State<GrowthTrackerPage> {
                     ),
                     const SizedBox(height: 10),
                     TextField(
+                      key: const ValueKey('growth-activity-notes'),
                       controller: _notesController,
                       maxLines: 3,
                       maxLength: 2500,
-                      decoration: const InputDecoration(
-                        labelText: 'Notes',
+                      decoration: InputDecoration(
+                        labelText: _selectedActivity == 'Update'
+                            ? 'Update note'
+                            : 'Notes',
+                        hintText: _selectedActivity == 'Update'
+                            ? 'Add a quick update about your plant.'
+                            : null,
                         border: OutlineInputBorder(),
                       ),
                     ),

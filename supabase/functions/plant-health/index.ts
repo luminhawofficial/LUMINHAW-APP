@@ -5,10 +5,11 @@ import {
 } from "../_shared/auth.ts";
 import {
   corsHeaders,
-  imageDataUriFrom,
+  imageBase64From,
   jsonResponse,
   readJsonBody,
 } from "../_shared/http.ts";
+import { createPlantHealthRequest } from "../_shared/plant-health-provider.ts";
 
 async function handleRequest(request: Request): Promise<Response> {
   if (request.method === "OPTIONS") {
@@ -32,8 +33,8 @@ async function handleRequest(request: Request): Promise<Response> {
 
   const parsed = await readJsonBody(request);
   if ("response" in parsed) return parsed.response;
-  const imageDataUri = imageDataUriFrom(parsed.body);
-  if (!imageDataUri) {
+  const imageBase64 = imageBase64From(parsed.body);
+  if (!imageBase64) {
     return jsonResponse(
       { error: { code: "valid_image_required" } },
       400,
@@ -49,21 +50,11 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   try {
-    const upstream = await fetch(
-      "https://plant.id/api/v3/health_assessment",
-      {
-        method: "POST",
-        headers: {
-          "Api-Key": apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          images: [imageDataUri],
-          details: ["local_name", "description", "treatment", "cause"],
-        }),
-        signal: AbortSignal.timeout(30_000),
-      },
-    );
+    const providerRequest = createPlantHealthRequest(imageBase64, apiKey);
+    const upstream = await fetch(providerRequest.url, {
+      ...providerRequest.init,
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!upstream.ok) {
       console.error("Plant health provider returned", upstream.status);
       return jsonResponse(

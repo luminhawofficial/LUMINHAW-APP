@@ -2,6 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:luminhaw/core/services/gemini_assistant_service.dart';
 
 void main() {
+  test('removes asterisk formatting from care suggestions', () {
+    expect(
+      GeminiAssistantService.cleanCareSuggestion(
+        '**Check the soil** before watering.',
+      ),
+      'Check the soil before watering.',
+    );
+  });
+
   test('bounds history to the latest ten valid messages', () {
     final history = [
       for (var index = 0; index < 12; index++)

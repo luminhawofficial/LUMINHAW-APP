@@ -19,6 +19,10 @@ void main() {
       SupabaseBackend.passwordResetRedirectUri,
       'https://luminhawofficial.github.io/Administrator/',
     );
+    expect(
+      SupabaseBackend.googleOAuthRedirectUri,
+      'com.luminhaw.plantcare://auth-callback',
+    );
   });
 
   test('recognizes the app-only password-reset logout callback', () {
@@ -55,6 +59,15 @@ void main() {
   });
 
   test('continues accepting the existing email-verification callback', () {
+    expect(
+      SupabaseBackend.isSupportedAuthCallback(
+        Uri.parse('com.luminhaw.plantcare://auth-callback?code=example'),
+      ),
+      isTrue,
+    );
+  });
+
+  test('accepts the Android Google OAuth callback', () {
     expect(
       SupabaseBackend.isSupportedAuthCallback(
         Uri.parse('com.luminhaw.plantcare://auth-callback?code=example'),

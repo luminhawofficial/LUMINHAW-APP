@@ -17,6 +17,12 @@ void main() {
     );
   });
 
+  test('reads the installed version for account settings', () async {
+    await AppVersionService.recordInstalledVersion('1.0.5+4006');
+
+    expect(await AppVersionService.readInstalledVersion(), '1.0.5+4006');
+  });
+
   test(
     'app update preserves session storage and records the new version',
     () async {

@@ -3,18 +3,23 @@ import 'dart:convert';
 import 'package:flutter/material.dart'
     show
         AssetImage,
+        Axis,
         Checkbox,
         ElevatedButton,
         Image,
         Icons,
+        ListView,
         MaterialApp,
         Navigator,
         NavigatorState,
         NetworkImage,
         Scaffold,
+        Scrollable,
+        ScrollableState,
         Size,
         SizedBox,
         Text,
+        TextFormField,
         Theme,
         ValueKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -49,9 +54,13 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
-      'local_garden_plant_names': ['Monstera'],
+      'local_garden_plant_names': ['Monstera', 'Snake Plant', 'Peace Lily'],
       'local_garden_plant_details': jsonEncode({
-        'Monstera': {'imageUrl': 'https://example.test/monstera.jpg'},
+        'Monstera': {
+          'imageUrl': 'https://example.test/monstera.jpg',
+          'plantingDate': '2025-11-14',
+          'growthStage': 'Seedling',
+        },
       }),
     });
     LocalPlantDataStore.instance.retryLoad();
@@ -61,6 +70,15 @@ void main() {
     await tester.pump();
 
     expect(find.text('Monstera'), findsOneWidget);
+    expect(find.textContaining('Planted'), findsOneWidget);
+    expect(find.text('Seedling'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is ListView && widget.scrollDirection == Axis.horizontal,
+      ),
+      findsNothing,
+    );
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -72,6 +90,46 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'dashboard garden scrolls when it contains more than three plants',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'local_garden_plant_names': [
+          'Monstera',
+          'Snake Plant',
+          'Peace Lily',
+          'Pothos',
+        ],
+        'local_garden_plant_details': jsonEncode({}),
+      });
+      LocalPlantDataStore.instance.retryLoad();
+      await LocalPlantDataStore.instance.load();
+
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: HomeTab())),
+      );
+      await tester.pump();
+
+      final horizontalList = find.byWidgetPredicate(
+        (widget) =>
+            widget is ListView && widget.scrollDirection == Axis.horizontal,
+      );
+      expect(horizontalList, findsOneWidget);
+      expect(
+        tester
+            .state<ScrollableState>(
+              find.descendant(
+                of: horizontalList,
+                matching: find.byType(Scrollable),
+              ),
+            )
+            .position
+            .maxScrollExtent,
+        greaterThan(0),
+      );
+    },
+  );
 
   testWidgets('garden displays the saved plant photo', (tester) async {
     const imageUrl = 'https://example.test/monstera.jpg';
@@ -116,6 +174,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome back.'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -138,12 +197,30 @@ void main() {
     SharedPreferences.setMockInitialValues({'onboarding_complete': true});
     await tester.pumpWidget(const LuminhawApp());
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Create an account'));
-    await tester.tap(find.text('Create an account'));
-    await tester.pumpAndSettle();
+    await openRoute(tester, '/signup');
     await tester.ensureVisible(find.text('Create account'));
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
 
+    expect(
+      tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, 'Create account'),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.ensureVisible(find.byType(TextFormField).at(2));
+    await tester.enterText(find.byType(TextFormField).at(2), 'Luminhaw@2026');
+    await tester.enterText(find.byType(TextFormField).at(3), 'Luminhaw@2026');
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ElevatedButton>(
+            find.widgetWithText(ElevatedButton, 'Create account'),
+          )
+          .onPressed,
+      isNotNull,
+    );
     await tester.tap(find.text('Create account'));
     await tester.pumpAndSettle();
     expect(
@@ -157,12 +234,12 @@ void main() {
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+    expect(find.text('Continue with Google'), findsOneWidget);
     await tester.tap(find.text('Create account'));
     await tester.pumpAndSettle();
 
     expect(find.text('Enter your name'), findsOneWidget);
     expect(find.text('Enter a valid email address'), findsOneWidget);
-    expect(find.text('Use at least 8 characters'), findsOneWidget);
   });
 
   testWidgets('privacy and terms links open a dismissible signup overlay', (
@@ -175,9 +252,7 @@ void main() {
     SharedPreferences.setMockInitialValues({'onboarding_complete': true});
     await tester.pumpWidget(const LuminhawApp());
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Create an account'));
-    await tester.tap(find.text('Create an account'));
-    await tester.pumpAndSettle();
+    await openRoute(tester, '/signup');
     await tester.ensureVisible(
       find.byKey(const ValueKey('signup-agreement-links')),
     );
@@ -240,6 +315,13 @@ void main() {
       find.textContaining('invalid, expired, or has already been used'),
       findsOneWidget,
     );
+
+    await openRoute(tester, '/change-password');
+    expect(
+      find.text('Sign in before updating your account security.'),
+      findsOneWidget,
+    );
+    expect(find.text('Log in'), findsOneWidget);
   });
 
   testWidgets('verified email callback returns to the app home', (
@@ -283,7 +365,9 @@ void main() {
       await tester.pump();
 
       expect(
-        find.text('Search by common, scientific, Cebuano, or Tagalog name.'),
+        find.text(
+          'Search by English/common, scientific, Tagalog, or Cebuano name.',
+        ),
         findsOneWidget,
       );
       expect(find.text('Monstera'), findsNothing);
@@ -352,7 +436,9 @@ void main() {
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Search by common, scientific, Cebuano, or Tagalog name.'),
+      find.text(
+        'Search by English/common, scientific, Tagalog, or Cebuano name.',
+      ),
       findsOneWidget,
     );
 
@@ -421,7 +507,9 @@ void main() {
     expect(find.text('Your AI Assistant'), findsOneWidget);
     expect(find.text('Basic plan · 10 prompts per day'), findsOneWidget);
     expect(
-      find.text('Hi, grower! Ask me about plant care, light, or watering.'),
+      find.text(
+        'Hello! Welcome to LUMIN AI. Ask me about plant care, light, or watering.',
+      ),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('new-ai-chat')), findsOneWidget);
@@ -523,8 +611,11 @@ void main() {
 
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('LUMIN AI history'), 200);
-    await tester.tap(find.text('LUMIN AI history'));
+    await tester.scrollUntilVisible(
+      find.text('AI assistant conversation history'),
+      200,
+    );
+    await tester.tap(find.text('AI assistant conversation history'));
     await tester.pumpAndSettle();
     expect(find.text('Search conversations'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.arrow_back));

@@ -2,6 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
 
+class HelpSupportPage extends StatelessWidget {
+  const HelpSupportPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenBody(
+      title: 'Help and support',
+      subtitle: 'Answers to common account and app questions.',
+      back: true,
+      child: const AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _DisclosureSection(
+              title: 'Sign-in and passwords',
+              body: 'Use Forgot password from the login screen to request a reset link. You can change your password in Settings while signed in. Your registered email is read-only in the app.',
+            ),
+            _DisclosureSection(
+              title: 'Profile and plant records',
+              body: 'Profile links open your saved plants, garden, identification history, care and growth records, and LUMIN AI history. Cloud records are scoped to the signed-in account. Saved Library plant details are stored locally in a separate account-scoped cache and are not uploaded; device-only records created while signed out remain on the device.',
+            ),
+            _DisclosureSection(
+              title: 'Premium payments',
+              body: 'A pending payment does not activate Premium. Only an authorized administrator can approve a verified payment. Check Subscription and payment for the current plan and payment status.',
+            ),
+            _DisclosureSection(
+              title: 'Contact',
+              body: 'An in-app support email or contact link is not configured in this build. For direct help, use an official LUMINHAW support channel provided by the app publisher.',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
@@ -24,7 +60,7 @@ class AboutPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'LUMINHAW helps plant lovers learn about plants and build thoughtful care routines. Basic access includes plant identification, basic plant information and care, growth tracking, the plant library, local names, recent scans, saved plants, and 10 LUMIN AI requests per day, including activity suggestions. Basic users can get one AI suggestion per plant per day after saving a care activity. Premium adds advanced biology and nutrients, AI health screening, detailed care guides, and up to four AI suggestions per plant per day. Account access uses Supabase Authentication. Garden records stay on this device when signed out and sync to an owner-scoped account when signed in with verified email. Saved Library plant details remain device-only and are separate from My Garden. Existing device-only records are not automatically uploaded. Plant identification can use Plant.ID with PlantNet fallback, and plant search can use Perenual with GBIF fallback when the Edge Functions and provider configuration are available. LUMIN AI uses Gemini and requires a verified email; daily limits are enforced by the server. Catalog entries are shown only when returned by an online provider.',
+              'LUMINHAW helps plant lovers learn about plants and build thoughtful care routines. Basic access includes plant identification, basic plant information and care, growth tracking, the plant library, local names, recent scans, saved plants, and 10 LUMIN AI requests per day, including activity suggestions. Basic users can get one AI suggestion per plant per day after saving a care activity. Premium adds advanced biology and nutrients, AI health screening, detailed care guides, and up to four AI suggestions per plant per day. Account access uses Supabase Authentication. Garden records stay on this device when signed out and sync to an owner-scoped account when signed in with verified email. Saved Library plant details remain device-local in a per-account cache when signed in and are separate from My Garden; they are not uploaded. Existing device-only records are not automatically attributed to an account. Plant identification can use Plant.ID with PlantNet fallback, and plant search can use Perenual with GBIF fallback when the Edge Functions and provider configuration are available. LUMIN AI uses Gemini and requires a verified email; daily limits are enforced by the server. Catalog entries are shown only when returned by an online provider.',
               style: TextStyle(color: AppColors.muted, height: 1.55),
             ),
             const SizedBox(height: 20),
@@ -87,7 +123,7 @@ class PrivacyPage extends StatelessWidget {
           children: const [
             _DisclosureSection(
               title: 'Privacy',
-              body: 'LUMINHAW uses Supabase Authentication for account creation, sign-in, email verification, and password recovery. The email and name you submit are sent to the configured Supabase project. Your active session is persisted by the Supabase client using browser storage on Web and device storage on mobile, and its access token is refreshed automatically when possible. While signed out, garden plants, care activities, and growth observations are stored on this device. With a verified signed-in account, these records sync to owner-scoped Supabase tables. Library plant details saved in Settings are stored only on this device and are separate from My Garden. Existing device-only records are not automatically uploaded or attributed to an account. Onboarding preferences remain on this device.',
+              body: 'LUMINHAW uses Supabase Authentication for email and Google sign-in, account creation, email verification, and password recovery. The email address registered to an account remains read-only in the app. Full name, unique username, optional gender, date of birth, phone number, location, bio, and gardening preferences are stored in the account’s owner-protected profile record. Age is calculated from date of birth and is not stored separately. Profile photos are stored in the configured Supabase avatar bucket and may be accessible through their public image URLs. Your active session is persisted by the Supabase client using browser storage on Web and device storage on mobile, and its access token is refreshed automatically when possible. While signed out, garden plants, care activities, and growth observations are stored on this device. With a verified signed-in account, these records sync to owner-scoped Supabase tables. Library plant details saved in Settings are stored only on this device and are separate from My Garden. Existing device-only records are not automatically uploaded or attributed to an account. Onboarding preferences remain on this device.',
             ),
             _DisclosureSection(
               title: 'Photos and external services',
@@ -99,7 +135,7 @@ class PrivacyPage extends StatelessWidget {
             ),
             _DisclosureSection(
               title: 'Account data',
-              body: 'A signed-in account may have its email, display name, garden plants, care activities, growth observations, scan history, health assessments, AI conversations and messages, and payment request records stored in Supabase. The included database migrations define owner-scoped row-level security and private photo storage; those protections take effect only after deployment. Account deletion is available in Profile after the deletion Edge Function and security migration are deployed; deletion removes the account, associated cloud records, and private photos including payment evidence. Device-only data is not automatically uploaded.',
+              body: 'A signed-in account may have its email, profile details (including date of birth and optional gender, phone number, bio, and location), profile photo, garden plants, care activities, growth observations, scan history, health assessments, AI conversations and messages, and payment request records stored in Supabase. Saved Library plant details are stored locally in an account-scoped cache and are not uploaded. Profile photos use the configured avatar bucket; public URLs may be accessible to anyone who has the URL. The included database migrations define owner-scoped row-level security and photo-storage policies; those protections take effect only after deployment. Account deletion is available in Profile after the deletion Edge Function and security migration are deployed; deletion removes the account, associated cloud records, the account-scoped saved-plant cache, and account photos including profile and payment images. Device-only data is not automatically uploaded.',
             ),
             _DisclosureSection(
               title: 'Subscriptions',

@@ -88,3 +88,20 @@ Deno.test("Trefle search sends query and token to its server API", async () => {
     throw new Error("Trefle request was not configured correctly.");
   }
 });
+
+Deno.test("Trefle search requests the selected result page", async () => {
+  let requestUrl: URL | undefined;
+  await searchTreflePlants(
+    "Saging",
+    "test-token",
+    async (input) => {
+      requestUrl = new URL(String(input));
+      return Response.json({ data: [] });
+    },
+    2,
+  );
+
+  if (requestUrl?.searchParams.get("page") !== "2") {
+    throw new Error("Trefle search did not request the selected page.");
+  }
+});

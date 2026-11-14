@@ -67,10 +67,12 @@ export async function searchTreflePlants(
   query: string,
   token: string,
   fetcher: typeof fetch = fetch,
+  page = 1,
 ): Promise<TreflePlant[]> {
   const url = new URL("https://trefle.io/api/v1/plants/search");
   url.searchParams.set("q", query);
   url.searchParams.set("token", token);
+  url.searchParams.set("page", String(page));
   const response = await providerJson(
     url.toString(),
     {},

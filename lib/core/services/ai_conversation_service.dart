@@ -290,7 +290,7 @@ class AiConversationService {
 
     final userId = _currentUserId();
     final pendingMessages = await _readPendingMessages(userId);
-    final cachedConversation = await _readCachedConversation(userId);
+    var cachedConversation = await _readCachedConversation(userId);
     final remoteConversations = <AiConversationHistoryItem>[];
     Object? syncError;
     var remoteLoaded = false;
@@ -300,6 +300,7 @@ class AiConversationService {
           .from('ai_conversations')
           .select('id,title,created_at,updated_at')
           .eq('user_id', userId)
+          .isFilter('deleted_at', null)
           .order('updated_at', ascending: false)
           .limit(limit);
       final conversations = (rows as List)
@@ -354,6 +355,32 @@ class AiConversationService {
           );
         }
       }
+
+      final localConversationIds = <String>{
+        if (cachedConversation != null) cachedConversation.conversationId,
+        for (final pending in pendingMessages) pending.conversationId,
+      };
+      if (localConversationIds.isNotEmpty) {
+        final deletedRows = await SupabaseBackend.client
+            .from('ai_conversations')
+            .select('id')
+            .eq('user_id', userId)
+            .inFilter('id', localConversationIds.toList(growable: false))
+            .not('deleted_at', 'is', null);
+        final deletedIds = (deletedRows as List)
+            .map((row) => (row as Map)['id'] as String)
+            .toSet();
+        pendingMessages.removeWhere(
+          (pending) => deletedIds.contains(pending.conversationId),
+        );
+        if (cachedConversation != null &&
+            deletedIds.contains(cachedConversation.conversationId)) {
+          cachedConversation = null;
+        }
+        for (final deletedId in deletedIds) {
+          await _discardDeletedConversationLocally(userId, deletedId);
+        }
+      }
       remoteLoaded = true;
     } catch (error) {
       if (pendingMessages.isEmpty && cachedConversation == null) rethrow;
@@ -364,29 +391,32 @@ class AiConversationService {
       for (final conversation in remoteConversations)
         conversation.id: conversation,
     };
-    if (cachedConversation != null &&
+    final currentCachedConversation = cachedConversation;
+    if (currentCachedConversation != null &&
         (!remoteLoaded ||
             remoteConversations.any(
-              (item) => item.id == cachedConversation.conversationId,
+              (item) => item.id == currentCachedConversation.conversationId,
             ) ||
             pendingMessages.any(
               (item) =>
-                  item.conversationId == cachedConversation.conversationId,
+                  item.conversationId ==
+                  currentCachedConversation.conversationId,
             ))) {
-      final cachedMessages = cachedConversation.messages;
+      final cachedMessages = currentCachedConversation.messages;
       final latestCachedMessage = cachedMessages.isEmpty
           ? null
           : mergeMessages(cachedMessages).last;
-      final existing = byId[cachedConversation.conversationId];
-      byId[cachedConversation.conversationId] = AiConversationHistoryItem(
-        id: cachedConversation.conversationId,
-        title: existing?.title ?? cachedConversation.title,
-        createdAt: existing?.createdAt ?? cachedConversation.createdAt,
+      final existing = byId[currentCachedConversation.conversationId];
+      byId[currentCachedConversation.conversationId] =
+          AiConversationHistoryItem(
+        id: currentCachedConversation.conversationId,
+        title: existing?.title ?? currentCachedConversation.title,
+        createdAt: existing?.createdAt ?? currentCachedConversation.createdAt,
         updatedAt:
             existing != null &&
-                existing.updatedAt.isAfter(cachedConversation.updatedAt)
+                existing.updatedAt.isAfter(currentCachedConversation.updatedAt)
             ? existing.updatedAt
-            : cachedConversation.updatedAt,
+            : currentCachedConversation.updatedAt,
         preview: latestCachedMessage?.message ?? existing?.preview ?? '',
         searchText: [
           existing?.searchText ?? '',
@@ -430,16 +460,18 @@ class AiConversationService {
     var remoteMessages = <AiChatMessage>[];
     Object? syncError;
     var remoteLoaded = false;
+    var conversationWasDeleted = false;
 
     try {
       conversationRow = await SupabaseBackend.client
           .from('ai_conversations')
-          .select('id,title,updated_at')
+          .select('id,title,updated_at,deleted_at')
           .eq('id', conversationId)
           .eq('user_id', userId)
           .maybeSingle();
 
-      if (conversationRow != null) {
+      conversationWasDeleted = conversationRow?['deleted_at'] != null;
+      if (conversationRow != null && !conversationWasDeleted) {
         var offset = 0;
         const pageSize = 1000;
         while (true) {
@@ -472,6 +504,19 @@ class AiConversationService {
           );
       if (!hasLocalConversation) rethrow;
       syncError = error;
+    }
+
+    if (conversationWasDeleted) {
+      await _discardDeletedConversationLocally(userId, conversationId);
+      return AiConversationSnapshot(
+        conversationId: null,
+        title: null,
+        messages: const [],
+        pendingMessages: const [],
+        syncError: StateError(
+          'This conversation was deleted. Start a new chat to continue.',
+        ),
+      );
     }
 
     final remoteUpdatedAt = conversationRow == null
@@ -669,12 +714,27 @@ class AiConversationService {
 
   static Future<void> deleteConversation(String conversationId) async {
     final userId = _currentUserId();
-    await SupabaseBackend.client
-        .from('ai_conversations')
-        .delete()
-        .eq('id', conversationId)
-        .eq('user_id', userId);
+    await SupabaseBackend.client.rpc(
+      'delete_ai_conversation',
+      params: {'p_conversation_id': conversationId},
+    );
+    await _discardDeletedConversationLocally(userId, conversationId);
+  }
 
+  static Future<void> clearPersonalData({required String ownerId}) async {
+    final preferences = await SharedPreferences.getInstance();
+    for (final key in ['$_outboxPrefix$ownerId', '$_cachePrefix$ownerId']) {
+      if (preferences.containsKey(key) && !await preferences.remove(key)) {
+        throw StateError('Local LUMIN AI history could not be cleared.');
+      }
+    }
+    _activeConversationIds.remove(ownerId);
+  }
+
+  static Future<void> _discardDeletedConversationLocally(
+    String userId,
+    String conversationId,
+  ) async {
     final pendingMessages = await _readPendingMessages(userId);
     pendingMessages.removeWhere(
       (pending) => pending.conversationId == conversationId,

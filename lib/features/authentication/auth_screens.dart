@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
+import 'package:luminhaw/core/services/password_policy.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/core/widgets/password_policy_field.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
 class LoginPage extends StatefulWidget {
@@ -66,6 +68,33 @@ class _LoginPageState extends State<LoginPage> {
       final message = _sanitizeAuthError(error.toString());
       _showMessage(
         message.isEmpty ? 'Could not sign in.' : 'Could not sign in: $message',
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_isSubmitting) return;
+    if (!SupabaseBackend.isInitialized) {
+      _showSetupMessage(context);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final launched = await SupabaseAuthService.signInWithGoogle();
+      if (!launched) {
+        _showMessage('Could not open Google sign-in. Try again.');
+      }
+    } on AuthException catch (error) {
+      _showMessage(_sanitizeAuthError(error.message));
+    } catch (error) {
+      final message = _sanitizeAuthError(error.toString());
+      _showMessage(
+        message.isEmpty
+            ? 'Could not start Google sign-in.'
+            : 'Could not start Google sign-in: $message',
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -156,6 +185,11 @@ class _LoginPageState extends State<LoginPage> {
               label: _isSubmitting ? 'Signing in…' : 'Log in',
               onPressed: _isSubmitting ? null : _signIn,
             ),
+            const SizedBox(height: 14),
+            _GoogleAuthButton(
+              isSubmitting: _isSubmitting,
+              onPressed: _signInWithGoogle,
+            ),
             const SizedBox(height: 20),
             if (!SupabaseBackend.isInitialized)
               SetupNotice(message: SupabaseBackend.configurationMessage),
@@ -202,12 +236,30 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    _password.addListener(_passwordChanged);
+    _confirmPassword.addListener(_passwordChanged);
+  }
+
+  @override
   void dispose() {
+    _password.removeListener(_passwordChanged);
+    _confirmPassword.removeListener(_passwordChanged);
     _name.dispose();
     _email.dispose();
     _password.dispose();
     _confirmPassword.dispose();
     super.dispose();
+  }
+
+  bool get _passwordFieldsAreValid =>
+      PasswordPolicy.isValid(_password.text) &&
+      _confirmPassword.text.isNotEmpty &&
+      _confirmPassword.text == _password.text;
+
+  void _passwordChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _createAccount() async {
@@ -216,6 +268,10 @@ class _SignUpPageState extends State<SignUpPage> {
       _showMessage(
         'Please agree to the Privacy Policy and Terms of Use to continue.',
       );
+      return;
+    }
+    if (!_passwordFieldsAreValid) {
+      _formKey.currentState!.validate();
       return;
     }
     if (!_formKey.currentState!.validate()) return;
@@ -262,6 +318,39 @@ class _SignUpPageState extends State<SignUpPage> {
         message.isEmpty
             ? 'Could not create your account. Please try again.'
             : 'Could not create your account: $message',
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (_isSubmitting) return;
+    if (!_hasAgreed) {
+      _showMessage(
+        'Please agree to the Privacy Policy and Terms of Use to continue.',
+      );
+      return;
+    }
+    if (!SupabaseBackend.isInitialized) {
+      _showSetupMessage(context);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final launched = await SupabaseAuthService.signInWithGoogle();
+      if (!launched) {
+        _showMessage('Could not open Google sign-in. Try again.');
+      }
+    } on AuthException catch (error) {
+      _showMessage(_sanitizeAuthError(error.message));
+    } catch (error) {
+      final message = _sanitizeAuthError(error.toString());
+      _showMessage(
+        message.isEmpty
+            ? 'Could not start Google sign-in.'
+            : 'Could not start Google sign-in: $message',
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -325,21 +414,12 @@ class _SignUpPageState extends State<SignUpPage> {
               validator: _validateEmail,
             ),
             const SizedBox(height: 16),
-            _InputField(
-              controller: _password,
-              label: 'Password',
-              obscureText: true,
-              validator: (value) => value == null || value.length < 8
-                  ? 'Use at least 8 characters'
-                  : null,
-            ),
+            PasswordPolicyField(controller: _password, label: 'Password'),
             const SizedBox(height: 16),
-            _InputField(
+            PasswordPolicyField(
               controller: _confirmPassword,
               label: 'Confirm password',
-              obscureText: true,
-              validator: (value) =>
-                  value != _password.text ? 'Passwords do not match' : null,
+              confirmationOf: _password,
             ),
             const SizedBox(height: 9),
             Row(
@@ -406,7 +486,14 @@ class _SignUpPageState extends State<SignUpPage> {
             const SizedBox(height: 18),
             PrimaryButton(
               label: _isSubmitting ? 'Creating account…' : 'Create account',
-              onPressed: _isSubmitting ? null : _createAccount,
+              onPressed: _isSubmitting || !_passwordFieldsAreValid
+                  ? null
+                  : _createAccount,
+            ),
+            const SizedBox(height: 14),
+            _GoogleAuthButton(
+              isSubmitting: _isSubmitting,
+              onPressed: _signInWithGoogle,
             ),
             const SizedBox(height: 12),
             if (!SupabaseBackend.isInitialized)
@@ -638,7 +725,7 @@ class _PrivacyUsageDialog extends StatelessWidget {
                         _PolicySection(
                           title: 'Privacy Policy',
                           paragraphs: [
-                            'LUMINHAW processes the name and email address you provide for account creation, sign-in, email verification, password recovery, and profile display. Supabase Authentication manages your account and session. The app may also store profile information such as your display name.',
+                            'LUMINHAW uses Supabase Authentication for email and Google sign-in, account creation, email verification, and password recovery. Your registered email remains read-only in the app. You may optionally add a display name, profile picture, and location to your account profile.',
                             'If you choose to identify a plant, the selected photo is sent only after you confirm the request. The photo is sent to the configured Supabase Edge Function and Plant.ID, with PlantNet fallback, for identification; the scanner does not save that image in the app storage bucket. The scan status and returned identification result are saved in your Supabase scan history. If you choose plant-health analysis, the selected photo is uploaded to private per-user storage and a health assessment is saved to your account. Health-photo processing requires an active verified Premium entitlement.',
                             'When signed out, garden plants, care activities, and growth observations stay on this device. With a verified signed-in account, these records sync to owner-scoped Supabase tables; existing device-only records are not automatically uploaded. Library plant details saved in Settings stay on this device and are never added to My Garden automatically. Onboarding preferences remain on this device. Scan history and health assessments are stored in the configured Supabase project. Identification photos are sent for processing but are not saved to the app storage bucket; plant-health photos are uploaded to private per-user storage. LUMIN AI conversations, user messages, AI replies, and timestamps are saved in owner-scoped Supabase tables. A fresh app launch starts a new chat; previous conversations remain available in Profile > LUMIN AI history. Messages that cannot sync remain on this device until synchronization can be retried. When you send a message to LUMIN AI, the current message and up to ten recent conversation messages are sent through Supabase to Gemini. Catalog search terms may be sent to Perenual or the public GBIF API. Storage protections and account-deletion behavior depend on the project migrations and functions being deployed.',
                             'Retention periods for Supabase records and provider processing are not finalized here. Account deletion is available in Profile when the required server function is deployed; it requests deletion of the account and associated cloud data, including files in the configured private photo bucket. Local garden and journal data must also be cleared from the device. Provider-specific retention may differ and must be reviewed before release.',
@@ -899,18 +986,38 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
   bool _isSaving = false;
-  bool _showPassword = false;
-  bool _showConfirmation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _password.addListener(_passwordChanged);
+    _confirmation.addListener(_passwordChanged);
+  }
 
   @override
   void dispose() {
+    _password.removeListener(_passwordChanged);
+    _confirmation.removeListener(_passwordChanged);
     _password.dispose();
     _confirmation.dispose();
     super.dispose();
   }
 
+  bool get _passwordFieldsAreValid =>
+      PasswordPolicy.isValid(_password.text) &&
+      _confirmation.text.isNotEmpty &&
+      _confirmation.text == _password.text;
+
+  void _passwordChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _updatePassword() async {
     if (_isSaving) return;
+    if (!_passwordFieldsAreValid) {
+      _formKey.currentState!.validate();
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     if (!SupabaseAuthService.hasVerifiedPasswordRecoverySession) {
       _showMessage(
@@ -962,52 +1069,15 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
               key: _formKey,
               child: Column(
                 children: [
-                  TextFormField(
+                  PasswordPolicyField(
                     controller: _password,
-                    obscureText: !_showPassword,
-                    validator: (value) => value == null || value.length < 8
-                        ? 'Use at least 8 characters'
-                        : null,
-                    decoration: InputDecoration(
-                      labelText: 'New Password',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        onPressed: () =>
-                            setState(() => _showPassword = !_showPassword),
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                        ),
-                      ),
-                    ),
+                    label: 'New Password',
                   ),
                   const SizedBox(height: 14),
-                  TextFormField(
+                  PasswordPolicyField(
                     controller: _confirmation,
-                    obscureText: !_showConfirmation,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Confirm your new password';
-                      }
-                      return value != _password.text
-                          ? 'Passwords do not match'
-                          : null;
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'Confirm New Password',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        onPressed: () => setState(
-                          () => _showConfirmation = !_showConfirmation,
-                        ),
-                        icon: Icon(
-                          _showConfirmation
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                        ),
-                      ),
-                    ),
+                    label: 'Confirm New Password',
+                    confirmationOf: _password,
                   ),
                   const SizedBox(height: 20),
                   if (_isSaving) ...[
@@ -1016,7 +1086,9 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
                   ],
                   PrimaryButton(
                     label: _isSaving ? 'Updating…' : 'Update Password',
-                    onPressed: _isSaving ? null : _updatePassword,
+                    onPressed: _isSaving || !_passwordFieldsAreValid
+                        ? null
+                        : _updatePassword,
                   ),
                 ],
               ),
@@ -1047,6 +1119,164 @@ class _UpdatePasswordPageState extends State<UpdatePasswordPage> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class ChangePasswordPage extends StatefulWidget {
+  const ChangePasswordPage({super.key});
+
+  @override
+  State<ChangePasswordPage> createState() => _ChangePasswordPageState();
+}
+
+class _ChangePasswordPageState extends State<ChangePasswordPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _currentPassword = TextEditingController();
+  final _newPassword = TextEditingController();
+  final _confirmation = TextEditingController();
+  bool _showCurrentPassword = false;
+  bool _isSaving = false;
+
+  bool get _requiresCurrentPassword =>
+      SupabaseAuthService.hasEmailPasswordProvider;
+
+  bool get _passwordFieldsAreValid =>
+      PasswordPolicy.isValid(_newPassword.text) &&
+      _confirmation.text.isNotEmpty &&
+      _confirmation.text == _newPassword.text;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPassword.addListener(_passwordChanged);
+    _newPassword.addListener(_passwordChanged);
+    _confirmation.addListener(_passwordChanged);
+  }
+
+  @override
+  void dispose() {
+    _currentPassword.removeListener(_passwordChanged);
+    _newPassword.removeListener(_passwordChanged);
+    _confirmation.removeListener(_passwordChanged);
+    _currentPassword.dispose();
+    _newPassword.dispose();
+    _confirmation.dispose();
+    super.dispose();
+  }
+
+  void _passwordChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _changePassword() async {
+    if (_isSaving || !_passwordFieldsAreValid) return;
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+    try {
+      await SupabaseAuthService.changePassword(
+        newPassword: _newPassword.text,
+        currentPassword: _requiresCurrentPassword
+            ? _currentPassword.text
+            : null,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your password has been updated.')),
+      );
+      Navigator.pop(context);
+    } on AuthException catch (error) {
+      _showMessage(_sanitizeAuthError(error.message));
+    } catch (error) {
+      final message = _sanitizeAuthError(error.toString());
+      _showMessage(
+        message.isEmpty
+            ? 'Could not update your password.'
+            : 'Could not update your password: $message',
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (SupabaseAuthService.currentUser == null) {
+      return ScreenBody(
+        title: 'Change password',
+        subtitle: 'Sign in before updating your account security.',
+        back: true,
+        child: PrimaryButton(
+          label: 'Log in',
+          onPressed: () => Navigator.pushNamed(context, '/login'),
+        ),
+      );
+    }
+
+    return ScreenBody(
+      title: _requiresCurrentPassword ? 'Change password' : 'Set a password',
+      subtitle: _requiresCurrentPassword
+          ? 'Verify your current password, then choose a stronger one.'
+          : 'Your Google sign-in works without a password. Adding one is optional.',
+      back: true,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_requiresCurrentPassword) ...[
+              TextFormField(
+                controller: _currentPassword,
+                obscureText: !_showCurrentPassword,
+                validator: (value) => value == null || value.isEmpty
+                    ? 'Enter your current password'
+                    : null,
+                decoration: InputDecoration(
+                  labelText: 'Current password',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    tooltip: _showCurrentPassword
+                        ? 'Hide password'
+                        : 'Show password',
+                    onPressed: () => setState(
+                      () => _showCurrentPassword = !_showCurrentPassword,
+                    ),
+                    icon: Icon(
+                      _showCurrentPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            PasswordPolicyField(
+              controller: _newPassword,
+              label: 'New password',
+            ),
+            const SizedBox(height: 14),
+            PasswordPolicyField(
+              controller: _confirmation,
+              label: 'Confirm new password',
+              confirmationOf: _newPassword,
+            ),
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: _isSaving ? 'Updating…' : 'Update password',
+              onPressed: _isSaving || !_passwordFieldsAreValid
+                  ? null
+                  : _changePassword,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1199,6 +1429,35 @@ class _InputField extends StatelessWidget {
       ],
     );
   }
+}
+
+class _GoogleAuthButton extends StatelessWidget {
+  const _GoogleAuthButton({
+    required this.isSubmitting,
+    required this.onPressed,
+  });
+
+  final bool isSubmitting;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+    onPressed: isSubmitting ? null : onPressed,
+    icon: isSubmitting
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.account_circle_outlined),
+    label: const Text('Continue with Google'),
+    style: OutlinedButton.styleFrom(
+      foregroundColor: AppColors.green,
+      minimumSize: const Size.fromHeight(48),
+      side: const BorderSide(color: AppColors.green),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+  );
 }
 
 String? _validateEmail(String? value) {

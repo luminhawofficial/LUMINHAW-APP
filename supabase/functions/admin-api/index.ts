@@ -386,6 +386,7 @@ async function handleAdminRequest(
         capabilities: {
           manage_roles: context.role === "admin",
           manage_payments: context.role === "admin",
+          manage_plant_catalog: context.role === "admin",
           manage_users: context.role !== "moderator",
         },
       });

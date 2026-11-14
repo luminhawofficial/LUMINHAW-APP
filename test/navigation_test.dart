@@ -113,11 +113,30 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Saved plant details'));
+    await tester.tap(find.text('Saved plants'));
     await tester.pumpAndSettle();
 
     expect(find.text('No saved plant details yet'), findsOneWidget);
     expect(find.textContaining('Not in My Garden'), findsOneWidget);
+  });
+
+  testWidgets('Profile edit action responds to a tap when signed out', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(initialRoute: '/profile', routes: LuminhawRouter.routes),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('profile-edit-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome back.'), findsOneWidget);
   });
 
   testWidgets('logout confirmation requires an explicit choice', (

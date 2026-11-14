@@ -15,8 +15,11 @@ class PlantRecord {
     this.taxonomicRank,
     this.taxonomicStatus,
     this.description,
+    this.englishName,
     this.tagalogName,
     this.bisayaName,
+    this.alternativeNames = const [],
+    this.searchMatchedName,
     this.formerScientificName,
     this.acceptedTaxonId,
     this.imageUrl,
@@ -60,8 +63,11 @@ class PlantRecord {
       taxonomicRank: optionalString('taxonomicRank'),
       taxonomicStatus: optionalString('taxonomicStatus'),
       description: optionalString('description'),
+      englishName: optionalString('englishName'),
       tagalogName: optionalString('tagalogName'),
       bisayaName: optionalString('bisayaName'),
+      alternativeNames: _storedStringList(details?['alternativeNames']),
+      searchMatchedName: optionalString('searchMatchedName'),
       formerScientificName: optionalString('formerScientificName'),
       acceptedTaxonId: optionalString('acceptedTaxonId'),
       imageUrl: optionalString('imageUrl'),
@@ -96,8 +102,11 @@ class PlantRecord {
   final String? taxonomicRank;
   final String? taxonomicStatus;
   final String? description;
+  final String? englishName;
   final String? tagalogName;
   final String? bisayaName;
+  final List<String> alternativeNames;
+  final String? searchMatchedName;
   final String? formerScientificName;
   final String? acceptedTaxonId;
   final String? imageUrl;
@@ -130,8 +139,11 @@ class PlantRecord {
     'taxonomicRank': taxonomicRank,
     'taxonomicStatus': taxonomicStatus,
     'description': description,
+    'englishName': englishName,
     'tagalogName': tagalogName,
     'bisayaName': bisayaName,
+    'alternativeNames': alternativeNames,
+    'searchMatchedName': searchMatchedName,
     'formerScientificName': formerScientificName,
     'acceptedTaxonId': acceptedTaxonId,
     'imageUrl': imageUrl,
@@ -160,4 +172,7 @@ class PlantRecord {
 
   static Set<String> _storedStringSet(Object? value) =>
       value is List ? Set.unmodifiable(value.whereType<String>()) : const {};
+
+  static List<String> _storedStringList(Object? value) =>
+      value is List ? List.unmodifiable(value.whereType<String>()) : const [];
 }

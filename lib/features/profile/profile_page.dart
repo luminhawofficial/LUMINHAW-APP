@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:luminhaw/core/constants/app_colors.dart';
-import 'package:luminhaw/core/services/local_plant_data_store.dart';
-import 'package:luminhaw/core/services/saved_plant_details_store.dart';
 import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart';
+import 'package:luminhaw/features/profile/profile_account_actions.dart';
 import 'package:luminhaw/features/profile/profile_avatar.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -15,11 +14,13 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   int _avatarRefreshToken = 0;
-  late final Future<bool> _canReviewPayments = _loadPaymentAdminCapability();
+  late final Future<Map<String, bool>> _adminCapabilities =
+      _loadAdminCapabilities();
 
-  Future<bool> _loadPaymentAdminCapability() async {
-    if (!SupabaseBackend.isInitialized || SupabaseAuthService.currentUser == null) {
-      return false;
+  Future<Map<String, bool>> _loadAdminCapabilities() async {
+    if (!SupabaseBackend.isInitialized ||
+        SupabaseAuthService.currentUser == null) {
+      return const {};
     }
     try {
       final response = await SupabaseBackend.client.functions.invoke(
@@ -27,18 +28,31 @@ class _ProfilePageState extends State<ProfilePage> {
         body: {'action': 'session'},
       );
       final data = response.data;
-      return response.status >= 200 && response.status < 300 && data is Map &&
-          data['capabilities'] is Map &&
-          (data['capabilities'] as Map)['manage_payments'] == true;
+      if (response.status < 200 ||
+          response.status >= 300 ||
+          data is! Map ||
+          data['capabilities'] is! Map) {
+        return const {};
+      }
+      final capabilities = data['capabilities'] as Map;
+      return {
+        'manage_payments': capabilities['manage_payments'] == true,
+        'manage_plant_catalog': capabilities['manage_plant_catalog'] == true,
+      };
     } catch (_) {
-      return false;
+      return const {};
     }
   }
 
   Future<void> _openProfileEditor(String route) async {
-    await Navigator.pushNamed(context, route);
+    final saved = await Navigator.pushNamed(context, route);
     if (!mounted || route != '/edit-profile') return;
     setState(() => _avatarRefreshToken++);
+    if (saved == true) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile changes saved.')));
+    }
   }
 
   @override
@@ -64,40 +78,86 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 14),
               AppCard(
-                child: Row(
+                child: Column(
                   children: [
-                    ProfileAvatar(
-                      radius: 31,
-                      refreshToken: _avatarRefreshToken,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayName,
-                            style: TextStyle(
-                              color: AppColors.green,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                            ),
+                    Row(
+                      children: [
+                        ProfileAvatar(
+                          radius: 31,
+                          refreshToken: _avatarRefreshToken,
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayName,
+                                style: const TextStyle(
+                                  color: AppColors.green,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                user?.email ?? 'Sign in to see your account',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                              if (user != null) ...[
+                                const SizedBox(height: 5),
+                                Text(
+                                  user.emailConfirmedAt == null
+                                      ? 'Email not verified'
+                                      : 'Email verified',
+                                  style: TextStyle(
+                                    color: user.emailConfirmedAt == null
+                                        ? Colors.orange.shade800
+                                        : AppColors.green,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                Text(
+                                  'Joined ${_profileDate(user.createdAt)}',
+                                  style: const TextStyle(
+                                    color: AppColors.muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                Text(
+                                  'Location · ${SupabaseAuthService.location ?? 'Not set (optional)'}',
+                                  style: const TextStyle(
+                                    color: AppColors.muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                          Text(
-                            user?.email ?? 'Sign in to see your account',
-                            style: TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: () => _openProfileEditor(
-                        user == null ? '/login' : '/edit-profile',
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('profile-edit-button'),
+                        onPressed: () => _openProfileEditor(
+                          user == null ? '/login' : '/edit-profile',
+                        ),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('Edit Profile'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.green,
+                          minimumSize: const Size.fromHeight(48),
+                          side: const BorderSide(color: AppColors.green),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
                       ),
-                      icon: const Icon(Icons.edit_outlined),
                     ),
                   ],
                 ),
@@ -108,15 +168,29 @@ class _ProfilePageState extends State<ProfilePage> {
                 title: 'Subscription & payment',
                 onTap: () => Navigator.pushNamed(context, '/premium'),
               ),
-              FutureBuilder<bool>(
-                future: _canReviewPayments,
-                builder: (context, snapshot) => snapshot.data == true
-                    ? _ProfileLink(
-                        icon: Icons.fact_check_outlined,
-                        title: 'GCash payment review',
-                        onTap: () => Navigator.pushNamed(context, '/admin/payments'),
-                      )
-                    : const SizedBox.shrink(),
+              FutureBuilder<Map<String, bool>>(
+                future: _adminCapabilities,
+                builder: (context, snapshot) {
+                  final capabilities = snapshot.data ?? const {};
+                  return Column(
+                    children: [
+                      if (capabilities['manage_payments'] == true)
+                        _ProfileLink(
+                          icon: Icons.fact_check_outlined,
+                          title: 'GCash payment review',
+                          onTap: () =>
+                              Navigator.pushNamed(context, '/admin/payments'),
+                        ),
+                      if (capabilities['manage_plant_catalog'] == true)
+                        _ProfileLink(
+                          icon: Icons.local_florist_outlined,
+                          title: 'Manage plant library',
+                          onTap: () =>
+                              Navigator.pushNamed(context, '/admin/plants'),
+                        ),
+                    ],
+                  );
+                },
               ),
               _ProfileLink(
                 icon: Icons.notifications_none,
@@ -124,20 +198,25 @@ class _ProfilePageState extends State<ProfilePage> {
                 onTap: () => Navigator.pushNamed(context, '/settings'),
               ),
               _ProfileLink(
+                icon: Icons.local_florist_outlined,
+                title: 'Saved plants',
+                onTap: () =>
+                    Navigator.pushNamed(context, '/saved-plant-details'),
+              ),
+              _ProfileLink(
+                icon: Icons.yard_outlined,
+                title: 'My Garden',
+                onTap: () => Navigator.pushNamed(context, '/garden'),
+              ),
+              _ProfileLink(
                 icon: Icons.history,
-                title: 'Scan history',
+                title: 'Plant identification history',
                 onTap: () => Navigator.pushNamed(context, '/history'),
               ),
               _ProfileLink(
                 icon: Icons.auto_awesome_outlined,
-                title: 'LUMIN AI history',
+                title: 'AI assistant conversation history',
                 onTap: () => Navigator.pushNamed(context, '/ai-history'),
-              ),
-              _ProfileLink(
-                icon: Icons.bookmark_border,
-                title: 'Saved plant details',
-                onTap: () =>
-                    Navigator.pushNamed(context, '/saved-plant-details'),
               ),
               _ProfileLink(
                 icon: Icons.monitor_heart_outlined,
@@ -147,6 +226,11 @@ class _ProfilePageState extends State<ProfilePage> {
               _ProfileLink(
                 icon: Icons.show_chart,
                 title: 'Growth tracker',
+                onTap: () => Navigator.pushNamed(context, '/growth'),
+              ),
+              _ProfileLink(
+                icon: Icons.water_drop_outlined,
+                title: 'Plant care history',
                 onTap: () => Navigator.pushNamed(context, '/growth'),
               ),
               _ProfileLink(
@@ -174,7 +258,7 @@ class _ProfilePageState extends State<ProfilePage> {
               if (user != null) ...[
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () => _deleteAccount(context),
+                  onPressed: () => confirmAndDeleteAccount(context),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.red.shade800,
                     minimumSize: const Size.fromHeight(48),
@@ -192,73 +276,14 @@ class _ProfilePageState extends State<ProfilePage> {
       ],
     );
   }
+}
 
-  Future<void> _deleteAccount(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete your account?'),
-        content: const Text(
-          'This permanently deletes your account and associated cloud data. '
-          'Your garden, growth notes, and saved Library plant details on this device will also be removed.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red.shade800),
-            child: const Text('Delete permanently'),
-          ),
-        ],
-      ),
-    );
-    if (!context.mounted || confirmed != true) return;
-
-    final password = await showDialog<String>(
-      context: context,
-      builder: (_) => const _DeleteAccountReauthenticationDialog(),
-    );
-    if (!context.mounted || password == null || password.isEmpty) return;
-
-    try {
-      await SupabaseAuthService.deleteAccount(password: password);
-    } catch (error) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not delete your account: $error')),
-        );
-      }
-      return;
-    }
-
-    final localDataErrors = <String>[];
-    try {
-      await LocalPlantDataStore.instance.clearPersonalData();
-    } catch (error) {
-      localDataErrors.add(error.toString());
-    }
-    try {
-      await SavedPlantDetailsStore.instance.clearPersonalData();
-    } catch (error) {
-      localDataErrors.add(error.toString());
-    }
-    if (!context.mounted) return;
-
-    Navigator.pushNamedAndRemoveUntil(context, '/welcome', (_) => false);
-    if (localDataErrors.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Account deleted, but some local data could not be cleared: '
-            '${localDataErrors.join('; ')}',
-          ),
-        ),
-      );
-    }
-  }
+String _profileDate(String value) {
+  final date = DateTime.tryParse(value);
+  if (date == null) return 'Unavailable';
+  return '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 }
 
 Future<bool> confirmLogout(BuildContext context) async =>
@@ -341,53 +366,6 @@ class _LogoutDialogButton extends StatelessWidget {
       textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
     ),
     child: Text(label, textAlign: TextAlign.center),
-  );
-}
-
-class _DeleteAccountReauthenticationDialog extends StatefulWidget {
-  const _DeleteAccountReauthenticationDialog();
-
-  @override
-  State<_DeleteAccountReauthenticationDialog> createState() =>
-      _DeleteAccountReauthenticationDialogState();
-}
-
-class _DeleteAccountReauthenticationDialogState
-    extends State<_DeleteAccountReauthenticationDialog> {
-  final _password = TextEditingController();
-
-  @override
-  void dispose() {
-    _password.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Verify it’s you'),
-    content: TextField(
-      controller: _password,
-      obscureText: true,
-      autofocus: true,
-      decoration: const InputDecoration(labelText: 'Account password'),
-      onChanged: (_) => setState(() {}),
-      onSubmitted: (value) {
-        if (value.isNotEmpty) Navigator.pop(context, value);
-      },
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
-      TextButton(
-        onPressed: _password.text.isEmpty
-            ? null
-            : () => Navigator.pop(context, _password.text),
-        style: TextButton.styleFrom(foregroundColor: Colors.red.shade800),
-        child: const Text('Continue'),
-      ),
-    ],
   );
 }
 

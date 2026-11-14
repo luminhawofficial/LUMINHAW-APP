@@ -23,6 +23,8 @@ class _LibraryPageState extends State<LibraryPage> {
   List<PlantRecord>? _catalogResults;
   String? _catalogError;
   bool _isSearchingCatalog = false;
+  bool _isLoadingMore = false;
+  bool _hasMoreResults = false;
 
   @override
   void dispose() {
@@ -38,6 +40,8 @@ class _LibraryPageState extends State<LibraryPage> {
         _catalogResults = null;
         _catalogError = null;
         _isSearchingCatalog = false;
+        _isLoadingMore = false;
+        _hasMoreResults = false;
       });
       return;
     }
@@ -46,17 +50,21 @@ class _LibraryPageState extends State<LibraryPage> {
       _catalogResults = null;
       _isSearchingCatalog = true;
       _catalogError = null;
+      _isLoadingMore = false;
+      _hasMoreResults = false;
     });
     _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
       final submittedQuery = query.trim();
       try {
+        final page = widget.searchCatalog == null
+            ? await PlantCatalogService.searchPage(submittedQuery)
+            : null;
         final results =
-            await (widget.searchCatalog ?? PlantCatalogService.search)(
-              submittedQuery,
-            );
+            page?.results ?? await widget.searchCatalog!(submittedQuery);
         if (!mounted || _search.text.trim() != submittedQuery) return;
         setState(() {
           _catalogResults = results;
+          _hasMoreResults = page?.hasMore ?? false;
           _isSearchingCatalog = false;
         });
       } catch (error) {
@@ -68,6 +76,46 @@ class _LibraryPageState extends State<LibraryPage> {
         });
       }
     });
+  }
+
+  Future<void> _loadMoreResults() async {
+    final query = _search.text.trim();
+    final current = _catalogResults;
+    if (current == null ||
+        !_hasMoreResults ||
+        _isLoadingMore ||
+        widget.searchCatalog != null) {
+      return;
+    }
+
+    setState(() => _isLoadingMore = true);
+    try {
+      final page = await PlantCatalogService.searchPage(
+        query,
+        offset: current.length,
+      );
+      if (!mounted || _search.text.trim() != query) return;
+      final seen = current
+          .map((plant) => plant.scientificName.toLowerCase().trim())
+          .toSet();
+      final nextResults = [
+        ...current,
+        ...page.results.where(
+          (plant) => seen.add(plant.scientificName.toLowerCase().trim()),
+        ),
+      ];
+      setState(() {
+        _catalogResults = List.unmodifiable(nextResults);
+        _hasMoreResults = page.hasMore;
+        _isLoadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted || _search.text.trim() != query) return;
+      setState(() {
+        _catalogError = error.toString();
+        _isLoadingMore = false;
+      });
+    }
   }
 
   @override
@@ -97,7 +145,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 controller: _search,
                 onChanged: _onSearchChanged,
                 decoration: InputDecoration(
-                  hintText: 'Search:',
+                  hintText: 'Search English, scientific, Tagalog, or Cebuano',
                   prefixIcon: const Icon(Icons.search),
                   filled: true,
                   fillColor: Colors.white,
@@ -116,7 +164,7 @@ class _LibraryPageState extends State<LibraryPage> {
               else if (catalogPlants == null)
                 const SetupNotice(
                   message:
-                      'Search by common, scientific, Cebuano, or Tagalog name.',
+                      'Search by English/common, scientific, Tagalog, or Cebuano name.',
                 )
               else
                 SetupNotice(
@@ -160,6 +208,20 @@ class _LibraryPageState extends State<LibraryPage> {
                   ),
                   itemBuilder: (context, index) =>
                       _PlantGridCard(plant: filtered[index]),
+                ),
+              if (_hasMoreResults && widget.searchCatalog == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: OutlinedButton(
+                    onPressed: _isLoadingMore ? null : _loadMoreResults,
+                    child: _isLoadingMore
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Load more plants'),
+                  ),
                 ),
             ],
           ),
@@ -219,6 +281,19 @@ class _PlantGridCard extends StatelessWidget {
                 fontSize: 13,
               ),
             ),
+            if (plant.englishName != null)
+              Text(
+                'English: ${plant.englishName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.muted, fontSize: 9),
+              ),
+            Text(
+              'Category: ${plant.category}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.muted, fontSize: 9),
+            ),
             if (plant.isVerified)
               const Text(
                 'Verified by LUMINHAW',
@@ -253,6 +328,13 @@ class _PlantGridCard extends StatelessWidget {
                 fontStyle: FontStyle.italic,
               ),
             ),
+            if (plant.description != null)
+              Text(
+                plant.description!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.muted, fontSize: 9),
+              ),
           ],
         ),
       ),
@@ -745,6 +827,8 @@ Map<String, String> _plantInformationFields(
   Map<String, String> enrichment,
 ) {
   final fields = <String, String>{
+    'category': plant.category,
+    if (plant.englishName != null) 'englishName': plant.englishName!,
     if (plant.scientificName.isNotEmpty) 'scientificName': plant.scientificName,
     if (plant.family != 'Not listed') 'family': plant.family,
     if (plant.order != null) 'order': plant.order!,
@@ -783,6 +867,8 @@ Map<String, String> _plantInformationFields(
 
 bool _isFreePlantInformationField(String key) => const {
   'scientificName',
+  'category',
+  'englishName',
   'family',
   'genus',
   'species',
@@ -858,6 +944,8 @@ String? _taxonomicValue(PlantRecord plant, String key) => switch (key) {
 };
 
 String _fieldLabel(String key) => switch (key) {
+  'category' => 'Category',
+  'englishName' => 'English name',
   'scientificName' => 'Scientific name',
   'tagalogName' => 'Tagalog name',
   'bisayaName' => 'Cebuano/Bisaya name',

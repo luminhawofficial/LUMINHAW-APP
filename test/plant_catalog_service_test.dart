@@ -171,6 +171,122 @@ void main() {
     expect(plant.bisayaName, 'Kapayas');
   });
 
+  test(
+    'matches Philippine local, English, scientific, and alternate names',
+    () {
+      final plants = PlantCatalogService.parseResponse({
+        'source': 'LUMINHAW local Philippine catalog',
+        'results': [
+          {
+            'commonName': 'Kangkong',
+            'englishName': 'Water spinach',
+            'scientificName': 'Ipomoea aquatica',
+            'family': 'Convolvulaceae',
+            'category': 'Vegetable',
+            'alternativeNames': ['Kangkong', 'Kang Kong', 'Water spinach'],
+          },
+          {
+            'commonName': 'Mangga',
+            'englishName': 'Mango',
+            'scientificName': 'Mangifera indica',
+            'family': 'Anacardiaceae',
+            'category': 'Fruit',
+            'alternativeNames': ['Mangga', 'Mango'],
+          },
+          {
+            'commonName': 'Malunggay',
+            'englishName': 'Moringa',
+            'scientificName': 'Moringa oleifera',
+            'alternativeNames': ['Malunggay', 'Moringa', 'Kamunggay'],
+          },
+          {
+            'commonName': 'Ampalaya',
+            'englishName': 'Bitter gourd',
+            'scientificName': 'Momordica charantia',
+            'alternativeNames': ['Ampalaya', 'Bitter gourd'],
+          },
+          {
+            'commonName': 'Kamote',
+            'englishName': 'Sweet potato',
+            'scientificName': 'Ipomoea batatas',
+            'alternativeNames': ['Kamote', 'Sweet potato'],
+          },
+          {
+            'commonName': 'Saging',
+            'englishName': 'Banana',
+            'scientificName': 'Musa × paradisiaca',
+            'alternativeNames': ['Saging', 'Banana'],
+          },
+          {
+            'commonName': 'Talong',
+            'englishName': 'Eggplant',
+            'scientificName': 'Solanum melongena',
+            'alternativeNames': ['Talong', 'Eggplant'],
+          },
+          {
+            'commonName': 'Kamatis',
+            'englishName': 'Tomato',
+            'scientificName': 'Solanum lycopersicum',
+            'alternativeNames': ['Kamatis', 'Tomato'],
+          },
+          {
+            'commonName': 'Pechay',
+            'englishName': 'Bok choy',
+            'scientificName': 'Brassica rapa',
+            'alternativeNames': ['Pechay', 'Bok choy', 'Pak choi'],
+          },
+        ],
+      });
+
+      final expectedNames = {
+        'Kangkong': 'Kangkong',
+        'Kang Kong': 'Kangkong',
+        'Water Spinach': 'Kangkong',
+        'Ipomoea aquatica': 'Kangkong',
+        'Mango': 'Mangga',
+        'Mangga': 'Mangga',
+        'Malunggay': 'Malunggay',
+        'Moringa': 'Malunggay',
+        'Ampalaya': 'Ampalaya',
+        'Kamote': 'Kamote',
+        'Saging': 'Saging',
+        'Talong': 'Talong',
+        'Pechay': 'Pechay',
+      };
+      for (final entry in expectedNames.entries) {
+        final result = PlantCatalogService.filterRelevantSearchResults(
+          entry.key,
+          plants,
+        );
+        expect(result.first.commonName, entry.value, reason: entry.key);
+      }
+
+      final kangkong = plants.first;
+      expect(kangkong.englishName, 'Water spinach');
+      expect(kangkong.family, 'Convolvulaceae');
+      expect(kangkong.category, 'Vegetable');
+    },
+  );
+
+  test('accepts a typo-tolerant alias match returned by the local catalog', () {
+    final plant = PlantCatalogService.parseResponse({
+      'source': 'LUMINHAW local Philippine catalog',
+      'results': [
+        {
+          'commonName': 'Kangkong',
+          'scientificName': 'Ipomoea aquatica',
+          'alternativeNames': ['Kangkong', 'Water spinach'],
+          'matchedName': 'Kangkong',
+        },
+      ],
+    }).single;
+
+    expect(
+      PlantCatalogService.filterRelevantSearchResults('Kangkongg', [plant]),
+      [plant],
+    );
+  });
+
   test('parses records returned by the database catalog API', () {
     final plants = PlantCatalogService.parseResponse({
       'source': 'catalog',

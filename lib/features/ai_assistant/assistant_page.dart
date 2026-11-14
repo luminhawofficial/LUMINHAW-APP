@@ -114,6 +114,7 @@ class _AssistantPageState extends State<AssistantPage>
       if (!mounted) return;
 
       setState(() {
+        _conversationId = snapshot.conversationId;
         _conversationTitle = snapshot.title;
         _messages
           ..clear()
@@ -436,7 +437,8 @@ class _AssistantPageState extends State<AssistantPage>
                         itemBuilder: (context, index) {
                           if (index == 0) {
                             return const _ChatBubble(
-                              text: 'Hi, grower! Ask me about plant care, light, or watering.',
+                              text:
+                                  'Hello! Welcome to LUMIN AI. Ask me about plant care, light, or watering.',
                               fromAssistant: true,
                             );
                           }

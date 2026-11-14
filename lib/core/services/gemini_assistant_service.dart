@@ -30,8 +30,8 @@ class GeminiAssistantService {
     required String plantName,
     required String activity,
     required String notes,
-  }) {
-    return _invoke(
+  }) async {
+    final suggestion = await _invoke(
       message: careSuggestionMessage(
         plantName: plantName,
         activity: activity,
@@ -40,7 +40,12 @@ class GeminiAssistantService {
       history: const [],
       careSuggestionPlantName: plantName.trim(),
     );
+    return cleanCareSuggestion(suggestion);
   }
+
+  @visibleForTesting
+  static String cleanCareSuggestion(String suggestion) =>
+      suggestion.replaceAll('*', '').trim();
 
   @visibleForTesting
   static String careSuggestionMessage({
@@ -61,6 +66,7 @@ Plant: $trimmedPlantName
 Activity: $trimmedActivity
 User note: ${trimmedNotes.isEmpty ? '(No note was added.)' : trimmedNotes}
 Give a brief, practical suggestion. If the note does not provide enough information, say what to check first. Do not diagnose disease or recommend unnecessary treatment. Respond in the language used in the user note when possible.
+Use plain text without Markdown or asterisk characters.
 ''';
   }
 

@@ -6,10 +6,25 @@ import 'package:luminhaw/core/services/supabase_backend.dart';
 import 'package:luminhaw/core/widgets/app_ui.dart' show safePlantImageUrl;
 import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 
+class PlantCatalogPage {
+  const PlantCatalogPage({required this.results, required this.hasMore});
+
+  final List<PlantRecord> results;
+  final bool hasMore;
+}
+
 class PlantCatalogService {
   PlantCatalogService._();
 
-  static Future<List<PlantRecord>> search(String query) async {
+  static const pageSize = 20;
+
+  static Future<List<PlantRecord>> search(String query) async =>
+      (await searchPage(query)).results;
+
+  static Future<PlantCatalogPage> searchPage(
+    String query, {
+    int offset = 0,
+  }) async {
     final trimmedQuery = query.trim();
     if (trimmedQuery.length < 2 || trimmedQuery.length > 80) {
       throw ArgumentError.value(
@@ -17,6 +32,9 @@ class PlantCatalogService {
         'query',
         'Plant name must be between 2 and 80 characters.',
       );
+    }
+    if (offset < 0 || offset > 500) {
+      throw ArgumentError.value(offset, 'offset', 'Offset is out of range.');
     }
     if (!SupabaseBackend.isInitialized) {
       throw StateError(SupabaseBackend.configurationMessage);
@@ -29,7 +47,7 @@ class PlantCatalogService {
     try {
       verifiedPlants = filterRelevantSearchResults(
         trimmedQuery,
-        await _searchVerifiedCatalog(trimmedQuery),
+        await _searchVerifiedCatalog(trimmedQuery, offset: offset),
       );
     } catch (error) {
       debugPrint('Verified plant catalog lookup failed: $error');
@@ -39,16 +57,26 @@ class PlantCatalogService {
     try {
       response = await SupabaseBackend.client.functions.invoke(
         'plant-catalog',
-        body: {'q': trimmedQuery},
+        body: {'q': trimmedQuery, 'limit': pageSize, 'offset': offset},
       );
     } on FunctionException catch (error) {
-      if (verifiedPlants.isNotEmpty) return verifiedPlants;
+      if (verifiedPlants.isNotEmpty) {
+        return PlantCatalogPage(
+          results: verifiedPlants,
+          hasMore: verifiedPlants.length == pageSize,
+        );
+      }
       throw StateError(
         _messageFor(_errorCode(error.details) ?? _codeForStatus(error.status)),
       );
     }
     if (response.status < 200 || response.status >= 300) {
-      if (verifiedPlants.isNotEmpty) return verifiedPlants;
+      if (verifiedPlants.isNotEmpty) {
+        return PlantCatalogPage(
+          results: verifiedPlants,
+          hasMore: verifiedPlants.length == pageSize,
+        );
+      }
       throw StateError(
         _messageFor(
           _errorCode(response.data) ?? _codeForStatus(response.status),
@@ -60,15 +88,27 @@ class PlantCatalogService {
       trimmedQuery,
       parseResponse(response.data),
     );
-    return preferVerifiedCatalogRecords(verifiedPlants, providerPlants);
+    final results = preferVerifiedCatalogRecords(
+      verifiedPlants,
+      providerPlants,
+    );
+    final payload = _asMap(response.data);
+    return PlantCatalogPage(
+      results: List.unmodifiable(results.take(pageSize)),
+      hasMore: payload?['hasMore'] == true,
+    );
   }
 
-  static Future<List<PlantRecord>> _searchVerifiedCatalog(String query) async {
+  static Future<List<PlantRecord>> _searchVerifiedCatalog(
+    String query, {
+    required int offset,
+  }) async {
     final fields = [
       'scientific_name',
       'common_name',
       'tagalog_name',
       'bisaya_name',
+      'english_name',
     ];
     final rowsById = <String, Map<String, dynamic>>{};
     await Future.wait(
@@ -79,7 +119,7 @@ class PlantCatalogService {
             .eq('is_verified', true)
             .eq('is_active', true)
             .ilike(field, '%$query%')
-            .limit(20);
+            .range(offset, offset + pageSize - 1);
         for (final row in rows) {
           final record = Map<String, dynamic>.from(row);
           final id = record['id'];
@@ -125,16 +165,23 @@ class PlantCatalogService {
       final plant = plants[index];
       final names = [
         plant.commonName,
+        plant.englishName,
         plant.scientificName,
         plant.tagalogName,
         plant.bisayaName,
         plant.formerScientificName,
+        ...plant.alternativeNames,
       ].whereType<String>().map(_normalizeSearchText).toList(growable: false);
       final allTerms = names
           .expand((name) => name.split(' '))
           .where((term) => term.isNotEmpty)
           .toSet();
-      if (!terms.every(allTerms.contains)) continue;
+      final hasKnownMatch =
+          plant.searchMatchedName != null ||
+          names.any((name) => _looksLikeQueryMatch(normalizedQuery, name));
+      if (!hasKnownMatch && !terms.every(allTerms.contains)) {
+        continue;
+      }
 
       var relevance = 100;
       for (final name in names) {
@@ -147,6 +194,9 @@ class PlantCatalogService {
         } else if (relevance < 400 &&
             terms.every(name.split(' ').toSet().contains)) {
           relevance = 400;
+        } else if (relevance < 300 &&
+            _looksLikeQueryMatch(normalizedQuery, name)) {
+          relevance = 300;
         }
       }
       ranked.add((
@@ -170,6 +220,66 @@ class PlantCatalogService {
       .replaceAll(_searchSeparators, ' ')
       .trim()
       .replaceAll(RegExp(r'\s+'), ' ');
+
+  static bool _looksLikeQueryMatch(String query, String candidate) {
+    final normalizedQuery = _normalizeSearchText(query);
+    final normalizedCandidate = _normalizeSearchText(candidate);
+    if (normalizedCandidate.isEmpty || normalizedQuery.isEmpty) return false;
+    if (normalizedCandidate == normalizedQuery ||
+        normalizedCandidate.startsWith(normalizedQuery) ||
+        normalizedQuery.startsWith(normalizedCandidate)) {
+      return true;
+    }
+    if (normalizedCandidate.contains(normalizedQuery) ||
+        normalizedQuery.contains(normalizedCandidate)) {
+      return true;
+    }
+
+    final shorter = normalizedQuery.length <= normalizedCandidate.length
+        ? normalizedQuery
+        : normalizedCandidate;
+    final longer = normalizedQuery.length <= normalizedCandidate.length
+        ? normalizedCandidate
+        : normalizedQuery;
+    if (shorter.isEmpty) return false;
+    if (longer.length <= 4)
+      return shorter == longer.substring(0, shorter.length);
+
+    final maxDistance = shorter.length <= 8 ? 1 : 2;
+    final distance = _levenshteinDistance(normalizedQuery, normalizedCandidate);
+    return distance <= maxDistance;
+  }
+
+  static int _levenshteinDistance(String source, String target) {
+    if (source == target) return 0;
+    if (source.isEmpty) return target.length;
+    if (target.isEmpty) return source.length;
+
+    var previous = List<int>.generate(target.length + 1, (index) => index);
+    var current = List<int>.filled(target.length + 1, 0, growable: false);
+
+    for (var i = 1; i <= source.length; i++) {
+      current[0] = i;
+      for (var j = 1; j <= target.length; j++) {
+        final cost = source[i - 1] == target[j - 1] ? 0 : 1;
+        final insertion = current[j - 1] + 1;
+        final deletion = previous[j] + 1;
+        final substitution = previous[j - 1] + cost;
+        current[j] = insertion < deletion ? insertion : deletion;
+        if (substitution < current[j]) {
+          current[j] = substitution;
+        }
+      }
+      final nextPrevious = current;
+      current = previous;
+      previous = nextPrevious;
+      for (var index = 0; index < current.length; index++) {
+        current[index] = 0;
+      }
+    }
+
+    return previous.last;
+  }
 
   static String _normalizedName(String name) =>
       name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -317,7 +427,7 @@ class PlantCatalogService {
         PlantRecord(
           commonName: commonName,
           scientificName: scientificName,
-          category: 'Plants',
+          category: _string(item['category']) ?? 'Plants',
           water:
               _string(care?['water_requirements']) ??
               _string(care?['watering']) ??
@@ -337,10 +447,18 @@ class PlantCatalogService {
           description:
               _string(item['description']) ??
               _descriptionFrom(item['descriptions']),
+          englishName:
+              _string(item['englishName']) ?? _string(item['english_name']),
           tagalogName:
               _string(item['tagalogName']) ?? _string(item['tagalog_name']),
           bisayaName:
               _string(item['bisayaName']) ?? _string(item['bisaya_name']),
+          alternativeNames: _stringList(
+            item['alternativeNames'] ?? item['alternative_names'],
+          ),
+          searchMatchedName:
+              _string(item['searchMatchedName']) ??
+              _string(item['matched_name']),
           formerScientificName:
               _string(item['formerScientificName']) ?? _string(item['synonym']),
           acceptedTaxonId: acceptedTaxonId,
@@ -405,6 +523,15 @@ class PlantCatalogService {
         if (_string(entry.value) != null) entry.key: _string(entry.value)!,
     };
   }
+
+  static List<String> _stringList(Object? value) => value is List
+      ? List.unmodifiable(
+          value
+              .whereType<String>()
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty),
+        )
+      : const [];
 
   static bool _isErrorResponse(Map<String, dynamic>? payload) =>
       payload != null &&

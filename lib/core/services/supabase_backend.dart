@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart'
         VoidCallback,
         kIsWeb,
         visibleForTesting;
+import 'package:luminhaw/core/services/password_policy.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseBackend {
@@ -34,14 +35,21 @@ class SupabaseBackend {
   static bool _authClientReadyForLinks = false;
   static final List<Uri> _queuedAuthLinks = [];
   static VoidCallback? _onPasswordResetLinkError;
+  static VoidCallback? _onAuthLinkError;
 
   static const authWebsiteRedirectUri =
       'https://luminhawofficial.github.io/Administrator/';
+  static const flutterWebOAuthRedirectUri =
+      'https://luminhawofficial.github.io/LUMINHAW-APP/';
+  static const androidOAuthRedirectUri =
+      'com.luminhaw.plantcare://auth-callback';
   static const androidPasswordResetCompleteUri =
       'com.luminhaw.plantcare://auth-callback?password_reset=complete';
   static const androidPasswordResetRedirectUri =
       'com.luminhaw.plantcare://auth/reset-password';
   static String get passwordResetRedirectUri => authWebsiteRedirectUri;
+  static String get googleOAuthRedirectUri =>
+      kIsWeb ? flutterWebOAuthRedirectUri : androidOAuthRedirectUri;
 
   static String get _publicKey {
     if (_publishableKey.trim().isNotEmpty) return _publishableKey.trim();
@@ -94,10 +102,12 @@ class SupabaseBackend {
 
   static Future<void> processPendingAuthLinks({
     required VoidCallback onPasswordResetError,
+    required VoidCallback onAuthLinkError,
   }) async {
     if (!_initialized) return;
     _authClientReadyForLinks = true;
     _onPasswordResetLinkError = onPasswordResetError;
+    _onAuthLinkError = onAuthLinkError;
 
     if (kIsWeb) {
       final initialUri = await AppLinks().getInitialLink();
@@ -145,6 +155,8 @@ class SupabaseBackend {
       if (isPasswordReset) {
         consumePendingPasswordResetCallback();
         onPasswordResetError?.call();
+      } else {
+        _onAuthLinkError?.call();
       }
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -268,9 +280,38 @@ class SupabaseAuthService {
       : null;
 
   static String? get displayName {
-    final user = currentUser;
-    final name = user?.userMetadata?['full_name'];
-    return name is String && name.trim().isNotEmpty ? name.trim() : null;
+    final metadata = currentUser?.userMetadata;
+    for (final value in [
+      metadata?['full_name'],
+      metadata?['name'],
+      metadata?['display_name'],
+    ]) {
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+    return null;
+  }
+
+  static String? get location {
+    final value = currentUser?.userMetadata?['location'];
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
+  }
+
+  static bool get hasEmailPasswordProvider {
+    final metadata = currentUser?.appMetadata;
+    final providers = metadata?['providers'];
+    if (providers is List && providers.whereType<String>().contains('email')) {
+      return true;
+    }
+    return metadata?['provider'] == 'email';
+  }
+
+  static bool get hasGoogleProvider {
+    final metadata = currentUser?.appMetadata;
+    final providers = metadata?['providers'];
+    if (providers is List && providers.whereType<String>().contains('google')) {
+      return true;
+    }
+    return metadata?['provider'] == 'google';
   }
 
   static Future<AuthResponse> signIn({
@@ -280,6 +321,36 @@ class SupabaseAuthService {
     email: email.trim(),
     password: password,
   );
+
+  static Future<bool> signInWithGoogle() =>
+      SupabaseBackend.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: SupabaseBackend.googleOAuthRedirectUri,
+      );
+
+  static Future<void> ensureCurrentUserProfile() async {
+    final user = currentUser;
+    if (user == null) return;
+
+    final client = SupabaseBackend.client;
+    final existing = await client
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle();
+    if (existing != null) return;
+
+    final metadata = user.userMetadata;
+    final displayName =
+        [metadata?['full_name'], metadata?['name'], metadata?['display_name']]
+            .whereType<String>()
+            .map((value) => value.trim())
+            .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+    await client.from('profiles').upsert({
+      'id': user.id,
+      'display_name': displayName,
+    }, onConflict: 'id');
+  }
 
   static Future<void> refreshSessionIfExpired() async {
     final auth = SupabaseBackend.client.auth;
@@ -299,12 +370,15 @@ class SupabaseAuthService {
     required String name,
     required String email,
     required String password,
-  }) => SupabaseBackend.client.auth.signUp(
-    email: email.trim(),
-    password: password,
-    emailRedirectTo: SupabaseBackend._authRedirectUri,
-    data: {'full_name': name.trim()},
-  );
+  }) {
+    _validatePassword(password);
+    return SupabaseBackend.client.auth.signUp(
+      email: email.trim(),
+      password: password,
+      emailRedirectTo: SupabaseBackend._authRedirectUri,
+      data: {'full_name': name.trim()},
+    );
+  }
 
   static Future<void> resendVerification(String email) =>
       SupabaseBackend.client.auth.resend(
@@ -346,36 +420,114 @@ class SupabaseAuthService {
     if (!hasVerifiedPasswordRecoverySession) {
       throw StateError('A verified password recovery session is required.');
     }
+    _validatePassword(password);
     return SupabaseBackend.client.auth.updateUser(
       UserAttributes(password: password),
     );
   }
 
-  static Future<UserResponse> updateProfileName(String name) => SupabaseBackend
-      .client
-      .auth
-      .updateUser(UserAttributes(data: {'full_name': name.trim()}));
+  static Future<UserResponse> changePassword({
+    required String newPassword,
+    String? currentPassword,
+  }) async {
+    final client = SupabaseBackend.client;
+    final user = currentUser;
+    if (user == null || client.auth.currentSession == null) {
+      throw StateError('Sign in before changing your password.');
+    }
+    _validatePassword(newPassword);
+
+    if (hasEmailPasswordProvider) {
+      final email = user.email;
+      if (email == null || currentPassword == null || currentPassword.isEmpty) {
+        throw StateError('Enter your current password to continue.');
+      }
+      final reauthenticated = await client.auth.signInWithPassword(
+        email: email,
+        password: currentPassword,
+      );
+      if (reauthenticated.user?.id != user.id ||
+          reauthenticated.session == null) {
+        throw StateError('Could not verify the current account.');
+      }
+    }
+
+    return client.auth.updateUser(
+      UserAttributes(
+        password: newPassword,
+        currentPassword: hasEmailPasswordProvider ? currentPassword : null,
+      ),
+    );
+  }
+
+  static Future<UserResponse> updateProfile({
+    required String name,
+    required String location,
+  }) async {
+    final client = SupabaseBackend.client;
+    final user = currentUser;
+    if (user == null || client.auth.currentSession == null) {
+      throw StateError('Sign in before updating your profile.');
+    }
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'Must not be empty.');
+    }
+
+    final response = await client.auth.updateUser(
+      UserAttributes(
+        data: {
+          'full_name': normalizedName,
+          'location': location.trim(),
+        },
+      ),
+    );
+    if (user.emailConfirmedAt != null) {
+      try {
+        await client.from('profiles').upsert({
+          'id': user.id,
+          'display_name': normalizedName,
+        }, onConflict: 'id');
+      } catch (error) {
+        throw StateError(
+          'Your profile details were updated, but the profile record could '
+          'not be synchronized: $error',
+        );
+      }
+    }
+    return response;
+  }
 
   static Future<void> signOut() async {
     clearPasswordRecoverySession();
     await SupabaseBackend.client.auth.signOut();
   }
 
-  static Future<void> deleteAccount({required String password}) async {
+  static void _validatePassword(String password) {
+    final error = PasswordPolicy.validate(password);
+    if (error != null) throw ArgumentError(error);
+  }
+
+  static Future<void> deleteAccount({String? password}) async {
     final client = SupabaseBackend.client;
     final user = currentUser;
-    final email = user?.email;
-    if (user == null || email == null) {
+    if (user == null || client.auth.currentSession == null) {
       throw StateError('Sign in before deleting your account.');
     }
 
-    final reauthenticated = await client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    if (reauthenticated.user?.id != user.id ||
-        reauthenticated.session == null) {
-      throw StateError('Could not verify the account for deletion.');
+    if (!hasGoogleProvider || hasEmailPasswordProvider) {
+      final email = user.email;
+      if (email == null || password == null || password.isEmpty) {
+        throw StateError('Verify your account password before deleting it.');
+      }
+      final reauthenticated = await client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      if (reauthenticated.user?.id != user.id ||
+          reauthenticated.session == null) {
+        throw StateError('Could not verify the account for deletion.');
+      }
     }
 
     try {
@@ -401,7 +553,7 @@ class SupabaseAuthService {
     if (payload is Map) {
       final error = payload['error'];
       if (error is Map && error['code'] == 'reauthentication_required') {
-        return 'Verify your password again before deleting your account.';
+        return 'Sign in again just before deleting your account, then retry within five minutes.';
       }
     }
     return 'Account deletion failed. Please try again.';
