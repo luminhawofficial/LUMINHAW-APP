@@ -10,6 +10,9 @@ select ok(
 
 select ok(
   has_column('public', 'plant_care', 'fertilizer')
+    and has_column('public', 'plant_care', 'water_requirements')
+    and has_column('public', 'plant_care', 'sunlight_requirements')
+    and has_column('public', 'plant_care', 'soil_requirements')
     and has_column('public', 'plant_care', 'growth_tips')
     and has_column('public', 'plant_care', 'common_diseases')
     and has_column('public', 'plant_care', 'treatment')
