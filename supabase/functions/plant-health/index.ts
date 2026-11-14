@@ -5,7 +5,7 @@ import {
 } from "../_shared/auth.ts";
 import {
   corsHeaders,
-  imageBase64From,
+  imageDataUriFrom,
   jsonResponse,
   readJsonBody,
 } from "../_shared/http.ts";
@@ -32,8 +32,8 @@ async function handleRequest(request: Request): Promise<Response> {
 
   const parsed = await readJsonBody(request);
   if ("response" in parsed) return parsed.response;
-  const imageBase64 = imageBase64From(parsed.body);
-  if (!imageBase64) {
+  const imageDataUri = imageDataUriFrom(parsed.body);
+  if (!imageDataUri) {
     return jsonResponse(
       { error: { code: "valid_image_required" } },
       400,
@@ -58,7 +58,7 @@ async function handleRequest(request: Request): Promise<Response> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          images: [imageBase64],
+          images: [imageDataUri],
           details: ["local_name", "description", "treatment", "cause"],
         }),
         signal: AbortSignal.timeout(30_000),

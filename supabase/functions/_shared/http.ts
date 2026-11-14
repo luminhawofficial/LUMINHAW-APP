@@ -157,7 +157,9 @@ export async function readFormData(
   }
 }
 
-export function imageBase64From(body: Record<string, unknown>): string | null {
+function imagePayloadFrom(
+  body: Record<string, unknown>,
+): { base64: string; mimeType: string } | null {
   const image = body.imageBase64;
   if (typeof image !== "string" || image.length === 0) return null;
 
@@ -183,9 +185,23 @@ export function imageBase64From(body: Record<string, unknown>): string | null {
     const isWebp = bytes.length >= 12 &&
       bytes.slice(0, 4) === "RIFF" &&
       bytes.slice(8, 12) === "WEBP";
-    return isPng || isJpeg || isWebp ? normalized : null;
+    if (isPng) return { base64: normalized, mimeType: "image/png" };
+    if (isJpeg) return { base64: normalized, mimeType: "image/jpeg" };
+    if (isWebp) return { base64: normalized, mimeType: "image/webp" };
+    return null;
   } catch (error) {
     if (error instanceof DOMException) return null;
     throw error;
   }
+}
+
+export function imageBase64From(body: Record<string, unknown>): string | null {
+  return imagePayloadFrom(body)?.base64 ?? null;
+}
+
+export function imageDataUriFrom(body: Record<string, unknown>): string | null {
+  const image = imagePayloadFrom(body);
+  return image === null
+    ? null
+    : `data:${image.mimeType};base64,${image.base64}`;
 }

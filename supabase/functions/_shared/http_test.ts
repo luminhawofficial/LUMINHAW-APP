@@ -1,4 +1,9 @@
-import { imageBase64From, readFormData, readJsonBody } from "./http.ts";
+import {
+  imageBase64From,
+  imageDataUriFrom,
+  readFormData,
+  readJsonBody,
+} from "./http.ts";
 import { authenticatedUserId } from "./auth.ts";
 
 Deno.test("readJsonBody rejects malformed JSON", async () => {
@@ -95,5 +100,11 @@ Deno.test("imageBase64From accepts a valid PNG signature", () => {
   const encoded = btoa(String.fromCharCode(...bytes));
   if (imageBase64From({ imageBase64: encoded }) !== encoded) {
     throw new Error("A valid PNG image should be accepted.");
+  }
+  if (
+    imageDataUriFrom({ imageBase64: encoded }) !==
+      `data:image/png;base64,${encoded}`
+  ) {
+    throw new Error("A valid PNG should be sent as a typed data URI.");
   }
 });
