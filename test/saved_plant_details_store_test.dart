@@ -17,9 +17,15 @@ void main() {
       category: 'Plants',
       water: 'Water when the soil is dry.',
       image: '',
+      fieldReferences: {
+        'water_requirement': ['https://example.com/monstera-watering'],
+      },
     );
 
     await store.save(plant);
+    expect(store.savedPlants.value['Monstera']?['fieldReferences'], {
+      'water_requirement': ['https://example.com/monstera-watering'],
+    });
     ownerId = 'user-two';
     await store.load();
     expect(store.savedPlants.value, isEmpty);

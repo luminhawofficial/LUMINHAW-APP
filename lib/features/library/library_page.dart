@@ -163,8 +163,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 )
               else if (catalogPlants == null)
                 const SetupNotice(
-                  message:
-                      'Search by English/common, scientific, Tagalog, or Cebuano name.',
+                  message: 'Search by English/common, scientific, Tagalog, or Cebuano name.',
                 )
               else
                 SetupNotice(
@@ -172,7 +171,11 @@ class _LibraryPageState extends State<LibraryPage> {
                       ? 'Searching plant databases…'
                       : filtered.isEmpty
                       ? 'No online plant records matched this search.'
-                      : 'Catalog source: ${filtered.first.source ?? 'provider'}.',
+                      : filtered.any(
+                          (plant) => plant.fieldReferences.isNotEmpty,
+                        )
+                      ? 'Open a plant to view its entered references.'
+                      : 'Open a plant to view any available references.',
                 ),
               const SizedBox(height: 12),
               if (_isSearchingCatalog)
@@ -245,6 +248,10 @@ class _PlantGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final imageUrl = safePlantImageUrl(plant.imageUrl);
+    final referenceCount = plant.fieldReferences.values.fold<int>(
+      0,
+      (count, sources) => count + sources.length,
+    );
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () => Navigator.pushNamed(context, '/plant', arguments: plant),
@@ -299,6 +306,16 @@ class _PlantGridCard extends StatelessWidget {
                 'Verified by LUMINHAW',
                 maxLines: 1,
                 style: TextStyle(
+                  color: AppColors.green,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            if (referenceCount > 0)
+              Text(
+                'References: $referenceCount',
+                maxLines: 1,
+                style: const TextStyle(
                   color: AppColors.green,
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
@@ -530,6 +547,14 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
       ),
     ];
     final description = plant.description ?? enrichedFields['description'];
+    final referenceEntries =
+        plant.fieldReferences.entries
+            .where((entry) => entry.value.isNotEmpty)
+            .toList()
+          ..sort(
+            (left, right) =>
+                _fieldLabel(left.key).compareTo(_fieldLabel(right.key)),
+          );
     final hasAdditionalBotanicalDetails =
         informationFields.keys.any((key) => key != 'scientificName') ||
         description != null ||
@@ -618,6 +643,51 @@ class _PlantDetailPageState extends State<PlantDetailPage> {
                 'Photo source: ${plant.imageReferenceUrl}',
                 style: const TextStyle(color: AppColors.muted, fontSize: 11),
               ),
+          ],
+          if (referenceEntries.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Sources & references',
+                    style: TextStyle(
+                      color: AppColors.green,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'References entered for this plant’s information.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                  for (final entry in referenceEntries) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _fieldLabel(entry.key),
+                      style: const TextStyle(
+                        color: AppColors.dark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    for (final source in entry.value)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: SelectableText(
+                          source,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
           ],
           const SizedBox(height: 16),
           AppCard(
@@ -945,15 +1015,27 @@ String? _taxonomicValue(PlantRecord plant, String key) => switch (key) {
 
 String _fieldLabel(String key) => switch (key) {
   'category' => 'Category',
+  'common_name' => 'Common name',
   'englishName' => 'English name',
+  'scientific_name' => 'Scientific name',
   'scientificName' => 'Scientific name',
+  'tagalog_name' => 'Tagalog name',
   'tagalogName' => 'Tagalog name',
+  'bisaya_name' => 'Cebuano/Bisaya name',
   'bisayaName' => 'Cebuano/Bisaya name',
+  'image_url' => 'Image',
   'family' => 'Family',
   'order' => 'Order',
   'genus' => 'Genus',
   'species' => 'Species',
   'description' => 'Description',
+  'water_requirement' => 'Water requirements',
+  'sunlight_requirement' => 'Sunlight requirements',
+  'soil_requirement' => 'Soil requirements',
+  'growth_tips' => 'Growth tips',
+  'common_diseases' => 'Common diseases',
+  'treatment' => 'Treatment',
+  'toxicity' => 'Toxicity',
   'characteristics' => 'Characteristics',
   'originHabitat' => 'Origin and natural habitat',
   'classification' => 'Plant classification',

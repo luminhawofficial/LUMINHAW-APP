@@ -30,6 +30,7 @@ class PlantRecord {
     this.source,
     this.enrichedFields = const {},
     this.enrichmentSources = const {},
+    this.fieldReferences = const {},
     this.aiGeneratedFields = const {},
     this.plantingDate,
     this.growthStage,
@@ -78,6 +79,7 @@ class PlantRecord {
       source: optionalString('source'),
       enrichedFields: _storedStringMap(details?['enrichedFields']),
       enrichmentSources: _storedStringMap(details?['enrichmentSources']),
+      fieldReferences: _storedStringListMap(details?['fieldReferences']),
       aiGeneratedFields: _storedStringSet(details?['aiGeneratedFields']),
       plantingDate: optionalString('plantingDate'),
       growthStage: optionalString('growthStage'),
@@ -117,6 +119,7 @@ class PlantRecord {
   final String? source;
   final Map<String, String> enrichedFields;
   final Map<String, String> enrichmentSources;
+  final Map<String, List<String>> fieldReferences;
   final Set<String> aiGeneratedFields;
   final String? plantingDate;
   final String? growthStage;
@@ -154,6 +157,7 @@ class PlantRecord {
     'source': source,
     'enrichedFields': enrichedFields,
     'enrichmentSources': enrichmentSources,
+    'fieldReferences': fieldReferences,
     'aiGeneratedFields': aiGeneratedFields.toList(),
     'plantingDate': plantingDate,
     'growthStage': growthStage,
@@ -172,6 +176,20 @@ class PlantRecord {
 
   static Set<String> _storedStringSet(Object? value) =>
       value is List ? Set.unmodifiable(value.whereType<String>()) : const {};
+
+  static Map<String, List<String>> _storedStringListMap(Object? value) {
+    if (value is! Map) return const {};
+    return Map.unmodifiable({
+      for (final entry in value.entries)
+        if (entry.key is String && entry.value is List)
+          entry.key as String: List.unmodifiable(
+            (entry.value as List)
+                .whereType<String>()
+                .map((source) => source.trim())
+                .where((source) => source.isNotEmpty),
+          ),
+    });
+  }
 
   static List<String> _storedStringList(Object? value) =>
       value is List ? List.unmodifiable(value.whereType<String>()) : const [];

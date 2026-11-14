@@ -3,7 +3,12 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public;
 
-select plan(12);
+select plan(13);
+
+update public.plant_catalog
+set field_references =
+  '{"description":["https://example.com/kangkong-source"]}'::jsonb
+where lower(scientific_name) = lower('Ipomoea aquatica');
 
 select is(
   (
@@ -142,6 +147,17 @@ select is(
   ),
   1,
   'local, English, and scientific names resolve to one plant record'
+);
+
+select is(
+  (
+    select plant -> 'field_references' -> 'description' ->> 0
+    from public.search_plant_catalog('Kangkong', 20, 0)
+    order by relevance desc
+    limit 1
+  ),
+  'https://example.com/kangkong-source',
+  'search results include the catalog field references'
 );
 
 select * from finish();

@@ -122,6 +122,38 @@ void main() {
     expect(store.gardenPlantNames.value, isEmpty);
   });
 
+  testWidgets('plant profiles show the actual entered source references', (
+    tester,
+  ) async {
+    const source = 'https://example.com/pechay-care';
+    const plant = PlantRecord(
+      commonName: 'Pechay',
+      scientificName: 'Brassica rapa',
+      category: 'Vegetable',
+      water: '',
+      image: '',
+      fieldReferences: {
+        'water_requirement': [source],
+      },
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PlantDetailPage(
+            plant: plant,
+            enrichmentLoader: _emptyEnrichment,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sources & references'), findsOneWidget);
+    expect(find.text('Water requirements'), findsOneWidget);
+    expect(find.text(source), findsOneWidget);
+  });
+
   testWidgets('manual Garden registration saves initial growth tracking data', (
     tester,
   ) async {
@@ -179,3 +211,11 @@ void main() {
     expect(find.text('Initial observation: First observation'), findsOneWidget);
   });
 }
+
+Future<PlantEnrichment> _emptyEnrichment(PlantRecord _) async =>
+    const PlantEnrichment(
+      fields: {},
+      sources: {},
+      aiGeneratedFields: {},
+      unavailableFields: {},
+    );

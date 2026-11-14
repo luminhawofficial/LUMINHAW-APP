@@ -26,6 +26,7 @@ type CatalogPlant = {
   category?: string;
   tagalogName?: string;
   bisayaName?: string;
+  fieldReferences?: Record<string, string[]>;
   alternativeNames?: string[];
   matchedName?: string;
   formerScientificName?: string;
@@ -108,6 +109,17 @@ function stringList(value: unknown): string[] {
     : [];
 }
 
+function stringListMap(value: unknown): Record<string, string[]> {
+  const record = object(value);
+  if (!record) return {};
+  const references: Record<string, string[]> = {};
+  for (const [field, values] of Object.entries(record)) {
+    const sources = stringList(values);
+    if (sources.length > 0) references[field] = sources;
+  }
+  return references;
+}
+
 async function searchLocalCatalog(
   query: string,
   limit: number,
@@ -156,6 +168,7 @@ async function searchLocalCatalog(
         category: firstString(plant.category) ?? "Plants",
         tagalogName: firstString(plant.tagalog_name) ?? undefined,
         bisayaName: firstString(plant.bisaya_name) ?? undefined,
+        fieldReferences: stringListMap(plant.field_references),
         alternativeNames: stringList(row.alternative_names),
         matchedName: firstString(row.matched_name) ?? undefined,
         acceptedTaxonId: firstString(plant.gbif_key) ??

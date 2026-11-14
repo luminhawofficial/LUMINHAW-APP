@@ -405,6 +405,9 @@ class PlantCatalogService {
         for (final entry in optionalEnrichedFields.entries)
           entry.value: entry.key,
       };
+      final fieldReferences = _stringListMap(
+        item['fieldReferences'] ?? item['field_references'],
+      );
       final plantSource = isVerified
           ? 'LUMINHAW verified catalog'
           : _string(item['source']) ??
@@ -412,16 +415,6 @@ class PlantCatalogService {
                 defaultSource;
       final enrichmentSources = <String, String>{
         ..._stringMap(item['enrichmentSources']),
-        if (isVerified) ...{
-          for (final key in [
-            'scientificName',
-            'family',
-            'tagalogName',
-            'bisayaName',
-            ...enrichedFields.keys,
-          ])
-            key: plantSource,
-        },
       };
       plants.add(
         PlantRecord(
@@ -481,6 +474,7 @@ class PlantCatalogService {
           source: plantSource,
           enrichedFields: Map.unmodifiable(enrichedFields),
           enrichmentSources: Map.unmodifiable(enrichmentSources),
+          fieldReferences: Map.unmodifiable(fieldReferences),
           isVerified: isVerified,
         ),
       );
@@ -522,6 +516,17 @@ class PlantCatalogService {
       for (final entry in map.entries)
         if (_string(entry.value) != null) entry.key: _string(entry.value)!,
     };
+  }
+
+  static Map<String, List<String>> _stringListMap(Object? value) {
+    final map = _asMap(value);
+    if (map == null) return const {};
+    final references = <String, List<String>>{};
+    for (final entry in map.entries) {
+      final sources = _stringList(entry.value);
+      if (sources.isNotEmpty) references[entry.key] = sources;
+    }
+    return Map.unmodifiable(references);
   }
 
   static List<String> _stringList(Object? value) => value is List

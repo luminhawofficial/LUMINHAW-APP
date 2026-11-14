@@ -319,6 +319,10 @@ void main() {
           'origin': 'South Asia',
           'compatible_weather': 'Tropical',
           'description': 'Verified mango information.',
+          'field_references': {
+            'description': ['https://example.com/mango-description'],
+            'water_requirement': ['https://example.com/mango-watering'],
+          },
           'is_verified': true,
           'plant_care': [
             {
@@ -350,10 +354,13 @@ void main() {
     expect(plant.enrichedFields['weatherClimate'], 'Tropical');
     expect(plant.enrichedFields['soilCompatibility'], 'Well-draining soil');
     expect(plant.enrichedFields['sunlightRequirements'], 'Full sun');
-    expect(
-      plant.enrichmentSources['soilCompatibility'],
-      'LUMINHAW verified catalog',
-    );
+    expect(plant.enrichmentSources['soilCompatibility'], isNull);
+    expect(plant.fieldReferences['description'], [
+      'https://example.com/mango-description',
+    ]);
+    expect(plant.fieldReferences['water_requirement'], [
+      'https://example.com/mango-watering',
+    ]);
     expect(plant.water, 'Water when the topsoil dries.');
     expect(plant.imageUrl, 'https://example.com/mango.jpg');
     expect(plant.imageAttribution, 'LUMINHAW');
